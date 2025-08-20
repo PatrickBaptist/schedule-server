@@ -73,6 +73,16 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       order: newOrder,
     });
 
+    // Cria um registro no histórico
+    await db.collection("allMusicLinks").add({
+      name,
+      nameLower: req.body.name.toLowerCase(),
+      link: embedLink,
+      letter: letter || null,
+      cifra: cifra || null,
+      createdAt: new Date(), // opcional, para saber quando foi adicionado
+    });
+
     res.status(201).json({ 
       id: newDocRef.id,
       message: "Música adicionada com sucesso!",

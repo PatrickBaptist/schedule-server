@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import scheduleRoutes from './routes/scheduleRoutes';
 import musicListRoutes from './routes/musicListRoutes';
+import allMusicLinksRoutes from './routes/allMusicLinksRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 
 import { config } from 'dotenv';
@@ -35,6 +36,7 @@ app.use(cors(
 
 app.use("/schedule", scheduleRoutes);
 app.use("/musicList", musicListRoutes);
+app.use("/allMusicLinks", allMusicLinksRoutes);
 app.use("/notification", notificationRoutes);
 
 app.listen(port, () => {console.log(`Servidor rodando na porta ${port}`)});
