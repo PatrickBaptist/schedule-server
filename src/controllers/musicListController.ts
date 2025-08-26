@@ -11,6 +11,7 @@ type MusicLinkData = {
   link: string | null;
   letter: string | null;
   cifra: string | null;
+  minister?: string | null;
   order: number;
 };
 
@@ -27,19 +28,15 @@ function normalizeString(str: string) {
 
 export const getMusicLinks = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Referência para a coleção
     const musicLinksCollection = db.collection("musicLinks");
 
-    // Busca todos os documentos ordenados pelo campo "order"
     const snapshot = await musicLinksCollection.orderBy("order", "asc").get();
 
-    // Se não houver nenhum documento
     if (snapshot.empty) {
       res.status(200).json([]); // Retorna array vazio
       return;
     }
 
-    // Monta o array com os dados e IDs
     const musicLinks = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -57,7 +54,6 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
   try {
     const { name, link, letter, cifra } = req.body;
 
-    //ID pelo token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(401).json({ message: "Token não fornecido" });
@@ -101,7 +97,6 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    // --- Validação do nome da música ---
     if (!name || typeof name !== "string" || name.trim() === "") {
       res.status(400).json({ message: "O nome da música é obrigatório." });
       return;
@@ -122,14 +117,29 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 
     const embedLink = link ? convertToEmbedUrl(link) : null;
 
-    const newDocRef = await musicLinksCollection.add({
-      name: req.body.name,
-      link: embedLink,
-      letter: req.body.letter || null,
-      cifra: req.body.cifra || null,
-      order: newOrder,
-      createdBy: userId
-    });
+    let newDocRef;
+    if (req.body.id) {
+      newDocRef = musicLinksCollection.doc(req.body.id);
+      await newDocRef.set({
+        name: req.body.name,
+        link: embedLink,
+        letter: req.body.letter || null,
+        cifra: req.body.cifra || null,
+        minister: assignedMinister || null,
+        order: newOrder,
+        createdBy: userId
+      }, { merge: true });
+    } else {
+      newDocRef = await musicLinksCollection.add({
+        name: req.body.name,
+        link: embedLink,
+        letter: req.body.letter || null,
+        cifra: req.body.cifra || null,
+        minister: assignedMinister || null,
+        order: newOrder,
+        createdBy: userId
+      });
+    }
 
     const newId = newDocRef.id;
 
@@ -138,7 +148,6 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 
     let existingHistorySnap;
 
-    // Busca se já existe no histórico
     if (embedLink) {
       existingHistorySnap = await db.collection("allMusicLinks")
         .where("link", "==", embedLink)
@@ -164,7 +173,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         createdAt: new Date(),
         minister: assignedMinister,
         createdBy: userId,
-      });
+      }, { merge: true });
     }
 
     res.status(201).json({ 
@@ -182,7 +191,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, link, letter, cifra, order } = req.body;
+    const { name, link, letter, cifra, order, ministeredBy } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -202,12 +211,16 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
       return;
     }
 
+    const oldData = docSnap.data();
     const oldOrder = docSnap.data()?.order ?? 1;
 
     const embedLink = convertToEmbedUrl(link)
 
+    // Garante que o minister não seja perdido
+    const finalMinister = ministeredBy || oldData?.minister || null;
+
     // Atualiza o próprio documento
-    await docRef.update({ name, link: embedLink, letter, cifra, order });
+    await docRef.update({ name, link: embedLink, letter, cifra, order, minister: finalMinister });
 
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
@@ -215,9 +228,11 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     await db.collection("allMusicLinks").doc(id).set(
       { name, 
         nameSearch: normalizedName, 
-        link: embedLink, 
+        link: embedLink,
         letter, 
-        cifra },
+        cifra,
+        minister: finalMinister || null
+      },
       { merge: true } // merge = não sobrescreve tudo, só atualiza os campos enviados
     );
 

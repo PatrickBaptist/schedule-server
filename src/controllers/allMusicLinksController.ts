@@ -8,6 +8,7 @@ interface MusicLink {
   link?: string | null;
   letter?: string | null;
   cifra?: string | null;
+  minister?: string | null;
   createdAt?: Date;
   nameSearch?: string[];
 }
@@ -74,7 +75,7 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
 
 export const addAllMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, link, letter, cifra, ministerName } = req.body;
+    const { name, link, letter, cifra, minister } = req.body;
 
     // Validação do campo obrigatório
     if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -93,6 +94,7 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
       link: embedLink,
       letter: letter || null,
       cifra: cifra || null,
+      minister: minister || null,
       createdAt: new Date(),
     });
 
@@ -112,7 +114,7 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
 export const updateAllMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, link, letter, cifra } = req.body;
+    const { name, link, letter, cifra, minister } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -121,6 +123,11 @@ export const updateAllMusicLink = async (req: Request, res: Response): Promise<v
 
     if (!name) {
       res.status(400).json({ message: "Nome da musica obrigatório" });
+      return;
+    }
+
+    if (!minister) {
+      res.status(400).json({ message: "Ministro obrigatório" });
       return;
     }
 
@@ -133,17 +140,18 @@ export const updateAllMusicLink = async (req: Request, res: Response): Promise<v
     }
 
     const embedLink = convertToEmbedUrl(link)
-
-    await docRef.update({ name, link: embedLink, letter, cifra });
-
     const nameWords  = normalizeName(name.trim());
     const normalizedName = nameWords.split(" ");
-    await db.collection("allMusicLinks").doc(id).set(
-      { name, 
-        nameSearch: normalizedName, 
-        link: embedLink, 
-        letter, 
-        cifra },
+
+    await docRef.set(
+      { 
+        name,
+        nameSearch: normalizedName,
+        link: embedLink,
+        letter,
+        cifra,
+        minister
+      },
       { merge: true }
     );
 
