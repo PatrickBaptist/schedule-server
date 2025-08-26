@@ -1,6 +1,9 @@
 import { Request, Response } from "express";
 import { db } from "../services/firebaseService";
 import convertToEmbedUrl from "../utils/convertVideos";
+import { remove as removeAccents } from "diacritics";
+import { UserRole } from "../enums/UserRoles";
+import jwt from "jsonwebtoken";
 
 type MusicLinkData = {
   id: string;
@@ -10,6 +13,17 @@ type MusicLinkData = {
   cifra: string | null;
   order: number;
 };
+
+const normalizeName = (name: string) =>
+  removeAccents(name.toLowerCase()).replace(/[^a-z0-9\s]/g, "");
+
+function normalizeString(str: string) {
+  return str
+    .normalize("NFD") // separa os acentos
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^\w\s]/gi, "") // remove pontuação
+    .toLowerCase();
+}
 
 export const getMusicLinks = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -43,8 +57,52 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
   try {
     const { name, link, letter, cifra } = req.body;
 
-    // Validação do campo obrigatório
-    if (!name || typeof name !== 'string' || name.trim() === '') {
+    //ID pelo token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ message: "Token não fornecido" });
+      return;
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    let decoded: any;
+
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET as string);
+    } catch (err) {
+      res.status(403).json({ message: "Token inválido" });
+      return;
+    }
+
+    const userId = decoded.userId;
+
+    const userDoc = await db.collection("users").doc(userId).get();
+    if (!userDoc.exists) {
+      res.status(404).json({ message: "Usuário não encontrado" });
+      return;
+    }
+
+    const userData = userDoc.data();
+    if (!userData) {
+      res.status(400).json({ message: "Dados do usuário não encontrados" });
+      return;
+    }
+
+    const allowedRoles = [UserRole.Minister];
+    let assignedMinister: string | null = null;
+
+     if (userData?.roles && userData.roles.some((role: string) => allowedRoles.includes(role as UserRole))) {
+      assignedMinister = userData.name;
+    } else if (req.body.ministeredBy){
+      assignedMinister = req.body.ministeredBy;
+    } else {
+      res.status(403).json({ message: "Informe quem ministrou a música" });
+      return;
+    }
+
+    // --- Validação do nome da música ---
+    if (!name || typeof name !== "string" || name.trim() === "") {
       res.status(400).json({ message: "O nome da música é obrigatório." });
       return;
     }
@@ -64,24 +122,50 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 
     const embedLink = link ? convertToEmbedUrl(link) : null;
 
-    // Cria um novo documento com ID automático
     const newDocRef = await musicLinksCollection.add({
       name: req.body.name,
       link: embedLink,
       letter: req.body.letter || null,
       cifra: req.body.cifra || null,
       order: newOrder,
+      createdBy: userId
     });
 
+    const newId = newDocRef.id;
+
+    const nameWords  = normalizeName(name.trim());
+    const normalizedName = nameWords.split(" ");
+
+    let existingHistorySnap;
+
+    // Busca se já existe no histórico
+    if (embedLink) {
+      existingHistorySnap = await db.collection("allMusicLinks")
+        .where("link", "==", embedLink)
+        .where("minister", "==", assignedMinister)
+        .limit(1)
+        .get();
+    } else {
+      existingHistorySnap = await db.collection("allMusicLinks")
+        .where("name", "==", name.trim())
+        .where("minister", "==", assignedMinister)
+        .limit(1)
+        .get();
+    }
+
     // Cria um registro no histórico
-    await db.collection("allMusicLinks").add({
-      name,
-      nameLower: req.body.name.toLowerCase(),
-      link: embedLink,
-      letter: letter || null,
-      cifra: cifra || null,
-      createdAt: new Date(), // opcional, para saber quando foi adicionado
-    });
+    if (existingHistorySnap.empty) {
+      await db.collection("allMusicLinks").doc(newId).set({
+        name,
+        nameSearch: normalizedName,
+        link: embedLink,
+        letter: letter || null,
+        cifra: cifra || null,
+        createdAt: new Date(),
+        minister: assignedMinister,
+        createdBy: userId,
+      });
+    }
 
     res.status(201).json({ 
       id: newDocRef.id,
@@ -97,7 +181,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params; // ID do link a atualizar
+    const { id } = req.params;
     const { name, link, letter, cifra, order } = req.body;
 
     if (!id) {
@@ -124,6 +208,18 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
 
     // Atualiza o próprio documento
     await docRef.update({ name, link: embedLink, letter, cifra, order });
+
+    // Atualiza também allMusicLinks com o mesmo ID
+    const nameWords  = normalizeName(name.trim());
+    const normalizedName = nameWords.split(" ");
+    await db.collection("allMusicLinks").doc(id).set(
+      { name, 
+        nameSearch: normalizedName, 
+        link: embedLink, 
+        letter, 
+        cifra },
+      { merge: true } // merge = não sobrescreve tudo, só atualiza os campos enviados
+    );
 
     // Se a ordem mudou, precisamos reorganizar os outros
     if (oldOrder !== order) {

@@ -4,6 +4,8 @@ import scheduleRoutes from './routes/scheduleRoutes';
 import musicListRoutes from './routes/musicListRoutes';
 import allMusicLinksRoutes from './routes/allMusicLinksRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import authUserRoutes from './routes/authUserRoutes';
+import usersRouter from './routes/usersRoutes';
 
 import { config } from 'dotenv';
 import helmet from 'helmet';
@@ -33,6 +35,9 @@ app.use(cors(
         }
     }
 ));
+
+app.use("/auth", authUserRoutes);
+app.use("/users", usersRouter);
 
 app.use("/schedule", scheduleRoutes);
 app.use("/musicList", musicListRoutes);

@@ -1,13 +1,35 @@
 import { Request, Response } from "express";
 import { db } from "../services/firebaseService";
 import convertToEmbedUrl from "../utils/convertVideos";
+import { remove as removeAccents } from "diacritics";
+
+interface MusicLink {
+  name: string;
+  link?: string | null;
+  letter?: string | null;
+  cifra?: string | null;
+  createdAt?: Date;
+  nameSearch?: string[];
+}
+
+const normalizeName = (name: string) =>
+  removeAccents(name.toLowerCase()).replace(/[^a-z0-9\s]/g, "");
+
+function normalizeString(str: string) {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/gi, "")
+    .toLowerCase()
+    .trim();
+}
 
 export const getAllMusicLinks = async (req: Request, res: Response): Promise<void> => {
-   try {
-    const { page = "1", limit = "15", search = "" } = req.query;
+  try {
+    const { page = "1", limit = "10", search = "" } = req.query;
 
-    const pageNumber = parseInt(page as string, 10);
-    const pageSize = parseInt(limit as string, 10);
+    const pageNumber = Number(page);
+    const pageSize = Number(limit);
 
     if (pageNumber < 1 || pageSize < 1) {
       res.status(400).json({ message: "Página e limite devem ser maiores que 0" });
@@ -16,27 +38,34 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
 
     let queryRef = db.collection("allMusicLinks").orderBy("createdAt", "desc");
 
-    // Filtro de busca
+    // Busca insensível a acentos e pontuação
     if (search) {
-      const searchLower = (search as string).toLowerCase();
-      queryRef = queryRef.where("nameLower", ">=", searchLower).where("nameLower", "<=", searchLower + "\uf8ff");
+      const normalizedSearch = normalizeString(search as string);
+      const searchWords = normalizedSearch.split(" ").filter(word => word !== "");
+
+      // Firestore só permite 1 filtro array-contains, então pegamos a primeira palavra
+      if (searchWords.length > 0) {
+        queryRef = queryRef.where("nameSearch", "array-contains", searchWords[0]);
+      }
     }
 
-    // Paginação
-    const snapshot = await queryRef.offset((pageNumber - 1) * pageSize).limit(pageSize).get();
+    const snapshot = await queryRef.offset((pageNumber - 1) * pageSize).limit(pageSize + 1).get();
 
-    const musicLinks = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const musicLinks: MusicLink[] = snapshot.docs.slice(0, pageSize).map(doc => {
+      const data = doc.data() as MusicLink;
+      return { id: doc.id, ...data };
+    });
+
+    const hasNextPage = snapshot.docs.length > pageSize;
+    const hasPrevPage = pageNumber > 1;
 
     res.status(200).json({
       page: pageNumber,
       limit: pageSize,
       results: musicLinks,
-      total: musicLinks.length,
+      hasNextPage,
+      hasPrevPage,
     });
-
   } catch (error) {
     console.error("Erro ao buscar histórico de músicas:", error);
     res.status(500).json({ message: "Erro ao buscar histórico de músicas", error: String(error) });
@@ -45,7 +74,7 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
 
 export const addAllMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, link, letter, cifra } = req.body;
+    const { name, link, letter, cifra, ministerName } = req.body;
 
     // Validação do campo obrigatório
     if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -54,11 +83,13 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
     }
 
     const embedLink = link ? convertToEmbedUrl(link) : null;
+    const nameWords  = normalizeName(name.trim());
+    const normalizedName = nameWords.split(" ");
 
     // Cria um novo documento com ID automático
     const newDocRef = await db.collection("allMusicLinks").add({
       name: name.trim(),
-      nameLower: name.trim().toLowerCase(), // para busca
+      nameSearch: normalizedName,
       link: embedLink,
       letter: letter || null,
       cifra: cifra || null,
@@ -80,7 +111,7 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
 
 export const updateAllMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id } = req.params; // ID do link a atualizar
+    const { id } = req.params;
     const { name, link, letter, cifra } = req.body;
 
     if (!id) {
@@ -103,20 +134,24 @@ export const updateAllMusicLink = async (req: Request, res: Response): Promise<v
 
     const embedLink = convertToEmbedUrl(link)
 
-    // Atualiza o próprio documento
-    await docRef.update({
-      name: name.trim(),
-      nameLower: name.trim().toLowerCase(), // para search
-      link: embedLink,
-      letter: letter || null,
-      cifra: cifra || null,
-    });
+    await docRef.update({ name, link: embedLink, letter, cifra });
 
-    res.status(200).json({ message: "Música do histórico atualizada com sucesso!" });
+    const nameWords  = normalizeName(name.trim());
+    const normalizedName = nameWords.split(" ");
+    await db.collection("allMusicLinks").doc(id).set(
+      { name, 
+        nameSearch: normalizedName, 
+        link: embedLink, 
+        letter, 
+        cifra },
+      { merge: true }
+    );
+
+    res.status(200).json({ message: "Musica atualizada com sucesso" });
 
   } catch (error) {
-    console.error("Erro ao atualizar música no histórico:", error);
-    res.status(500).json({ message: "Erro ao atualizar música no histórico", error: String(error) });
+    console.error("Erro ao atualizar musica:", error);
+    res.status(500).json({ message: "Erro ao atualizar musica", error: String(error) });
   }
 };
 
@@ -130,20 +165,13 @@ export const deleteAllMusicLink = async (req: Request, res: Response): Promise<v
     }
 
     const docRef = db.collection("allMusicLinks").doc(id);
-    const docSnap = await docRef.get();
-
-    if (!docSnap.exists) {
-      res.status(404).json({ message: "Música não encontrada no histórico" });
-      return;
-    }
-
     await docRef.delete();
 
     res.status(200).json({ message: "Link de música removido com sucesso" });
     console.log("Link de musica " + id + " removido com sucesso");
 
   } catch (error) {
-    console.error("Erro ao deletar música do histórico:", error);
-    res.status(500).json({ message: "Erro ao deletar música do histórico:", error: String(error) });
+    console.error("Erro ao deletar link de música:", error);
+    res.status(500).json({ message: "Erro ao deletar link de música", error: String(error) });
   }
 };

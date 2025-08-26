@@ -7,6 +7,7 @@
     "strict": true,
     "esModuleInterop": true,
     "lib": ["es2017"],
-    "types": ["node", "express"]
+    "types": ["node", "express"],
+    "typeRoots": ["./src/types", "./node_modules/@types"]
   }
 }
