@@ -10,7 +10,7 @@ router.get("/", getAllUsers);
 router.get("/all", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), getUsers);
 
 router.get("/:id", getUserById);
-router.put("/:id", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), updateUser);
-router.delete("/:id", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), deleteUser);
+router.put("/:id", authenticateToken, authorizeRoles(UserRole.Admin), updateUser);
+router.delete("/:id", authenticateToken, authorizeRoles(UserRole.Admin), deleteUser);
 
 export default router;
