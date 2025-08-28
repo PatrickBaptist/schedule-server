@@ -2,6 +2,18 @@ import { Request, Response } from "express";
 import { db } from "../services/firebaseService";
 import { clearMusicLinksIfChanged } from "../utils/clearMusicLinks";
 
+interface SpecialSchedule {
+  evento: string;
+  data: string;
+  vocal1: string;
+  vocal2: string;
+  teclas: string;
+  violao: string;
+  batera: string;
+  bass: string;
+  guita: string;
+}
+
 export const getMonthlySchedule = async (req: Request, res: Response): Promise<void> => {
   try {
     const { month } = req.params;
@@ -105,12 +117,12 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
       const existingIndex = sundays.findIndex((s: any) => toDateOnly(s.date) === toDateOnly(date));
 
       if (existingIndex >= 0) {
-        sundays[existingIndex] = { date, músicos }; // Atualiza a escala existente
+        sundays[existingIndex] = { date, músicos };
       } else {
-        sundays.push({ date, músicos }); // Adiciona uma nova escala
+        sundays.push({ date, músicos });
       }
     } else {
-      sundays.push({ date, músicos }); // Cria nova lista se não existe
+      sundays.push({ date, músicos });
     }
 
     await docRef.set({ sundays });
@@ -119,5 +131,78 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
   } catch (error) {
     console.error("Erro ao salvar escala:", error);
     res.status(500).json({ message: "Erro interno", error: String(error) });
+  }
+};
+
+export const getSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const docRef = db.collection("specialSchedules").doc("current");
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      res.status(404).json({ message: "Escala especial não encontrada." });
+      return;
+    }
+
+    const data = docSnap.data();
+    res.json({ schedules: data?.schedules ?? [] });
+  } catch (err) {
+    console.error("Erro ao buscar escala especial:", err);
+    res.status(500).json({ message: "Erro interno", error: String(err) });
+  }
+};
+
+export const postSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { schedules } = req.body;
+    if (!Array.isArray(schedules)) {
+      res.status(400).json({ message: "Parâmetro 'schedules' inválido ou ausente." });
+      return;
+    }
+
+    for (const s of schedules) {
+      if (
+        typeof s.evento !== "string" ||
+        typeof s.data !== "string" ||
+        typeof s.vocal1 !== "string" ||
+        typeof s.vocal2 !== "string" ||
+        typeof s.teclas !== "string" ||
+        typeof s.violao !== "string" ||
+        typeof s.batera !== "string" ||
+        typeof s.bass !== "string" ||
+        typeof s.guita !== "string"
+      ) {
+        res.status(400).json({ message: "Objeto 'SpecialSchedule' inválido." });
+        return;
+      }
+    }
+
+    await db.collection("specialSchedules").doc("current").set({
+      schedules,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(201).json({ message: "Escala especial salva com sucesso." });
+  } catch (err) {
+    console.error("Erro ao salvar escala especial:", err);
+    res.status(500).json({ message: "Erro interno", error: String(err) });
+  }
+};
+
+export const deleteSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const docRef = db.collection("specialSchedules").doc("current");
+    const docSnap = await docRef.get();
+
+    if (!docSnap.exists) {
+      res.status(404).json({ message: "Escala especial não encontrada." });
+      return;
+    }
+
+    await docRef.delete();
+    res.status(200).json({ message: "Escala especial deletada com sucesso." });
+  } catch (err) {
+    console.error("Erro ao deletar escala especial:", err);
+    res.status(500).json({ message: "Erro interno", error: String(err) });
   }
 };
