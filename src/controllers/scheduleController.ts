@@ -189,7 +189,9 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
 
 export const deleteSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
-    const docRef = db.collection("specialSchedules").doc("current");
+    const { id } = req.params;
+
+    const docRef = db.collection("specialSchedules").doc(id);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {

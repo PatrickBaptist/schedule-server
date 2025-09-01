@@ -14,6 +14,6 @@ router.get("/:month", getMonthlySchedule);
 router.post("/", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader, UserRole.Minister), upsertSchedule);
 router.post("/special-schedule", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader),  postSpecialSchedules);
 
-router.delete("/special-schedule", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), deleteSpecialSchedules);
+router.delete("/special-schedule/:id", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), deleteSpecialSchedules);
 
 export default router;
