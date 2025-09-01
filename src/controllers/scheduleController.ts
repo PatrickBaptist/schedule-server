@@ -136,18 +136,14 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
 
 export const getSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
-    const docRef = db.collection("specialSchedules").doc("current");
-    const docSnap = await docRef.get();
-
-    if (!docSnap.exists) {
-      res.status(404).json({ message: "Escala especial não encontrada." });
-      return;
-    }
-
-    const data = docSnap.data();
-    res.json({ schedules: data?.schedules ?? [] });
+    const snapshot = db.collection("specialSchedules").get()
+      const schedules = (await snapshot).docs.map(doc =>  ({
+          id: doc.id,
+          ...doc.data(),
+      }));
+    res.status(200).json(schedules);
   } catch (err) {
-    console.error("Erro ao buscar escala especial:", err);
+    console.error("Erro ao buscar escala especial:", err);  
     res.status(500).json({ message: "Erro interno", error: String(err) });
   }
 };
@@ -177,10 +173,12 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
       }
     }
 
-    await db.collection("specialSchedules").doc("current").set({
-      schedules,
-      timestamp: new Date().toISOString(),
-    });
+    for (const s of schedules) {
+      await db.collection("specialSchedules").doc(s.data).set({
+        ...s,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     res.status(201).json({ message: "Escala especial salva com sucesso." });
   } catch (err) {
