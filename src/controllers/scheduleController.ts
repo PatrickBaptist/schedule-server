@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { db } from "../services/firebaseService";
+import { db } from "../repositories/firebaseService";
 import { clearMusicLinksIfChanged } from "../utils/clearMusicLinks";
 
 interface SpecialSchedule {

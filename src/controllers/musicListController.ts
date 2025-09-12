@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { db } from "../services/firebaseService";
+import { db } from "../repositories/firebaseService";
 import convertToEmbedUrl from "../utils/convertVideos";
 import { remove as removeAccents } from "diacritics";
 import { UserRole } from "../enums/UserRoles";

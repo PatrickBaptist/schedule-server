@@ -1,4 +1,4 @@
-import { db } from "../services/firebaseService";
+import { db } from "../repositories/firebaseService";
 
 export const clearMusicLinksIfChanged = async (nextSundayISO: string): Promise<boolean> => {
   const metaRef = db.collection("meta").doc("lastSunday");

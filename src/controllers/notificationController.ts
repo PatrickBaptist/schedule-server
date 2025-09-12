@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { admin, db } from "../services/firebaseService";
+import { admin, db } from "../repositories/firebaseService";
 
 export const getNotification = async (req: Request, res: Response): Promise<void> => {
   try {
