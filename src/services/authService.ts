@@ -43,7 +43,7 @@ export class AuthService {
         }
 
         const token = jwt.sign({
-            userId: userDoc.id, name: userData.name, email: userData.email, role: userData.role },
+            userId: userDoc.id, name: userData.name, email: userData.email, role: userData.roles },
             process.env.JWT_SECRET,
             { expiresIn: "30d" }
         );
@@ -54,7 +54,7 @@ export class AuthService {
                 id: userDoc.id,
                 name: userData.name,
                 email: userData.email,
-                role: userData.role
+                roles: userData.roles
             }
         };
     }
@@ -131,7 +131,8 @@ export class AuthService {
             id: userDoc.id,
             name: userData?.name,
             email: userData?.email,
-            role: userData?.role
+            nickname: userData?.nickname,
+            roles: userData?.roles,
         }
     }
 }

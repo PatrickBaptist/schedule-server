@@ -10,7 +10,7 @@ export class AuthController {
       const dto: LoginUserDto = req.body;
 
       const result = await authService.login(dto);
-      res.status(200).json({ result });
+      res.status(200).json( result );
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }
@@ -21,7 +21,7 @@ export class AuthController {
       const dto: RegisterUserDto = req.body;
 
       const result = await authService.register(dto);
-      res.status(201).json({ result });
+      res.status(201).json( result );
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }
@@ -43,7 +43,7 @@ export class AuthController {
       }
 
       const user = await authService.me(token);
-      res.status(200).json({ user });
+      res.status(200).json( user );
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }
