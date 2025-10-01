@@ -174,8 +174,9 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
     }
 
     for (const s of schedules) {
+      const { id, ...rest } = s;
       await db.collection("specialSchedules").doc(s.data).set({
-        ...s,
+        ...rest,
         timestamp: new Date().toISOString(),
       });
     }
@@ -190,6 +191,11 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
 export const deleteSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+
+    if (!id) {
+      res.status(400).json({ success: false, error: "ID é obrigatório." });
+      return;
+    }
 
     const docRef = db.collection("specialSchedules").doc(id);
     const docSnap = await docRef.get();
