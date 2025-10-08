@@ -25,7 +25,7 @@ app.use(cors(
     {
         origin: (origin, callback) => {
             if (!origin || [
-                'https://louvor-manancial.netlify.app',
+                'https://ibmmlouvor.netlify.app/login',
                 'http://localhost:5173'
             ].includes(origin)) {
                 callback(null, true);
