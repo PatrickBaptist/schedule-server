@@ -7,6 +7,7 @@ interface MusicLink {
   name: string;
   link?: string | null;
   letter?: string | null;
+  spotify?: string | null;
   cifra?: string | null;
   minister?: string | null;
   createdAt?: Date;
