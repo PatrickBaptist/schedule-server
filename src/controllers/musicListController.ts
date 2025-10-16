@@ -52,7 +52,7 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
 
 export const addMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, link, letter, cifra } = req.body;
+    const { name, link, letter, spotify, cifra } = req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -113,7 +113,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
     const lastOrder = snapshot.empty ? 0 : snapshot.docs[0].data().order ?? 0;
     const newOrder = lastOrder + 1;
 
-    console.log('Link adicionado com sucesso:', 'nome:', name, 'link', link, 'letra', letter, 'cifra', cifra);
+    console.log('Link adicionado com sucesso:', 'nome:', name, 'link', link, 'letra', letter, 'spotify', spotify,'cifra', cifra);
 
     const embedLink = link ? convertToEmbedUrl(link) : null;
 
@@ -124,6 +124,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         name: req.body.name,
         link: embedLink,
         letter: req.body.letter || null,
+        spotify: req.body.spotify || null,
         cifra: req.body.cifra || null,
         minister: assignedMinister || null,
         order: newOrder,
@@ -134,6 +135,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         name: req.body.name,
         link: embedLink,
         letter: req.body.letter || null,
+        spotify: req.body.spotify || null,
         cifra: req.body.cifra || null,
         minister: assignedMinister || null,
         order: newOrder,
@@ -169,6 +171,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         nameSearch: normalizedName,
         link: embedLink,
         letter: letter || null,
+        spotify: spotify || null,
         cifra: cifra || null,
         createdAt: new Date(),
         minister: assignedMinister,
@@ -191,7 +194,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, link, letter, cifra, order, ministeredBy } = req.body;
+    const { name, link, letter, spotify, cifra, order, ministeredBy } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -220,7 +223,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     const finalMinister = ministeredBy || oldData?.minister || null;
 
     // Atualiza o próprio documento
-    await docRef.update({ name, link: embedLink, letter, cifra, order, minister: finalMinister });
+    await docRef.update({ name, link: embedLink, letter, spotify, cifra, order, minister: finalMinister });
 
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
@@ -229,7 +232,8 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
       { name, 
         nameSearch: normalizedName, 
         link: embedLink,
-        letter, 
+        letter,
+        spotify,
         cifra,
         minister: finalMinister || null
       },
