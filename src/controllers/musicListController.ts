@@ -89,7 +89,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
     let assignedMinister: string | null = null;
 
      if (userData?.roles && userData.roles.some((role: string) => allowedRoles.includes(role as UserRole))) {
-      assignedMinister = userData.name;
+      assignedMinister = userData.nickname || userData.name;
     } else if (req.body.ministeredBy){
       assignedMinister = req.body.ministeredBy;
     } else {
