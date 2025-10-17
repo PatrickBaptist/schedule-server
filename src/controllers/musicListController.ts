@@ -52,7 +52,7 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
 
 export const addMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, link, letter, spotify, cifra } = req.body;
+    const { name, link, letter, spotify, cifra, description } = req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -117,6 +117,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 
     const embedLink = link ? convertToEmbedUrl(link) : null;
 
+    const finalDescription = description?.trim() || null;
+
     let newDocRef;
     if (req.body.id) {
       newDocRef = musicLinksCollection.doc(req.body.id);
@@ -126,6 +128,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         letter: req.body.letter || null,
         spotify: req.body.spotify || null,
         cifra: req.body.cifra || null,
+        description: finalDescription,
         minister: assignedMinister || null,
         order: newOrder,
         createdBy: userId
@@ -137,6 +140,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         letter: req.body.letter || null,
         spotify: req.body.spotify || null,
         cifra: req.body.cifra || null,
+        description: finalDescription,
         minister: assignedMinister || null,
         order: newOrder,
         createdBy: userId
@@ -173,6 +177,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         letter: letter || null,
         spotify: spotify || null,
         cifra: cifra || null,
+        description: finalDescription,
         createdAt: new Date(),
         minister: assignedMinister,
         createdBy: userId,
@@ -194,7 +199,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, link, letter, spotify, cifra, order, ministeredBy } = req.body;
+    const { name, link, letter, spotify, cifra, description, order, ministeredBy } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -223,7 +228,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     const finalMinister = ministeredBy || oldData?.minister || null;
 
     // Atualiza o próprio documento
-    await docRef.update({ name, link: embedLink, letter, spotify, cifra, order, minister: finalMinister });
+    await docRef.update({ name, link: embedLink, letter, spotify, cifra, description, order, minister: finalMinister });
 
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
@@ -235,6 +240,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
         letter,
         spotify,
         cifra,
+        description,
         minister: finalMinister || null
       },
       { merge: true } // merge = não sobrescreve tudo, só atualiza os campos enviados
