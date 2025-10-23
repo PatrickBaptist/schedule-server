@@ -41,11 +41,11 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
     let queryRef = db.collection("allMusicLinks").orderBy("createdAt", "desc");
 
     // Busca insensível a acentos e pontuação
+    let searchWords: string[] = [];
     if (search) {
       const normalizedSearch = normalizeString(search as string);
-      const searchWords = normalizedSearch.split(" ").filter(word => word !== "");
+      searchWords = normalizedSearch.split(" ").filter(word => word !== "");
 
-      // Firestore só permite 1 filtro array-contains, então pegamos a primeira palavra
       if (searchWords.length > 0) {
         queryRef = queryRef.where("nameSearch", "array-contains", searchWords[0]);
       }
@@ -53,10 +53,16 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
 
     const snapshot = await queryRef.offset((pageNumber - 1) * pageSize).limit(pageSize + 1).get();
 
-    const musicLinks: MusicLink[] = snapshot.docs.slice(0, pageSize).map(doc => {
+    let musicLinks: MusicLink[] = snapshot.docs.slice(0, pageSize).map(doc => {
       const data = doc.data() as MusicLink;
       return { id: doc.id, ...data };
     });
+
+    if (searchWords.length > 1) {
+      musicLinks = musicLinks.filter(m =>
+        searchWords.every(word => m.nameSearch?.includes(word))
+      );
+    }
 
     const hasNextPage = snapshot.docs.length > pageSize;
     const hasPrevPage = pageNumber > 1;
