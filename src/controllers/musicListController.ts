@@ -33,7 +33,7 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
     const snapshot = await musicLinksCollection.orderBy("order", "asc").get();
 
     if (snapshot.empty) {
-      res.status(200).json([]); // Retorna array vazio
+      res.status(200).json([]);
       return;
     }
 
@@ -52,7 +52,7 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
 
 export const addMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, link, letter, spotify, cifra, description } = req.body;
+    const { name, worshipMoment, link, letter, spotify, cifra, description } = req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -102,6 +102,11 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    if (!worshipMoment || typeof worshipMoment !== "string" || worshipMoment.trim() === "") {
+      res.status(400).json({ message: "O momento de louvor é obrigatório." });
+      return;
+    }
+
     const musicLinksCollection = db.collection("musicLinks");
 
     // Busca o último documento para saber o maior `order`
@@ -124,6 +129,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       newDocRef = musicLinksCollection.doc(req.body.id);
       await newDocRef.set({
         name: req.body.name,
+        worshipMoment: req.body.worshipMoment,
         link: embedLink,
         letter: req.body.letter || null,
         spotify: req.body.spotify || null,
@@ -136,6 +142,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
     } else {
       newDocRef = await musicLinksCollection.add({
         name: req.body.name,
+        worshipMoment: req.body.worshipMoment,
         link: embedLink,
         letter: req.body.letter || null,
         spotify: req.body.spotify || null,
@@ -184,6 +191,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       }, { merge: true });
     }
 
+    console.log('Link adicionado com sucesso no histórico');
+
     res.status(201).json({ 
       id: newDocRef.id,
       message: "Música adicionada com sucesso!",
@@ -199,7 +208,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, link, letter, spotify, cifra, description, order, ministeredBy } = req.body;
+    const { name, worshipMoment, link, letter, spotify, cifra, description, order, ministeredBy } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -208,6 +217,11 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
 
     if (!name) {
       res.status(400).json({ message: "Nome da musica obrigatório" });
+      return;
+    }
+
+    if (!worshipMoment) {
+      res.status(400).json({ message: "Momento de louvor obrigatório" });
       return;
     }
 
@@ -228,7 +242,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     const finalMinister = ministeredBy || oldData?.minister || null;
 
     // Atualiza o próprio documento
-    await docRef.update({ name, link: embedLink, letter, spotify, cifra, description, order, minister: finalMinister });
+    await docRef.update({ name, link: embedLink, worshipMoment, letter, spotify, cifra, description, order, minister: finalMinister });
 
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
