@@ -4,9 +4,12 @@ import { WorshipUser } from "../models/user";
 import { db } from "../repositories/firebaseService";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { EmailService } from "./emailService";
+import { UserRole } from "../enums/UserRoles";
 
 export class AuthService {
     private collection;
+    private emailService = new EmailService();
 
     constructor() {
         this.collection = db.collection("users");
@@ -109,7 +112,24 @@ export class AuthService {
         };
 
         const docRef = this.collection.add(newUser);
-        
+
+        const leadersSnap = await this.collection
+            .where("rolesLower", "array-contains-any", [UserRole.Admin, UserRole.Leader])
+            .get();
+
+        const emailsToNotify = leadersSnap.docs
+            .map(doc => doc.data().email)
+            .filter(Boolean);
+
+        await this.emailService.sendLeaderNotification({
+            to: emailsToNotify,
+            subject: "Novo usuário aguardando aprovação",
+            html: `
+                <h2>Novo cadastro realizado</h2>
+                <p>O usuário <strong>${name}</strong> foi cadastrado e está aguardando aprovação.</p>
+            `
+        });
+
         return { message: "Usuário cadastrado com sucesso", id: (await docRef).id };
     }
 
