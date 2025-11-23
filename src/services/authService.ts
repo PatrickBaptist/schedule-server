@@ -121,14 +121,18 @@ export class AuthService {
             .map(doc => doc.data().email)
             .filter(Boolean);
 
-        await this.emailService.sendLeaderNotification({
+        try {
+            await this.emailService.sendLeaderNotification({
             to: emailsToNotify,
             subject: "Novo usuário aguardando aprovação",
             html: `
-                <h2>Novo cadastro realizado</h2>
-                <p>O usuário <strong>${name}</strong> foi cadastrado e está aguardando aprovação.</p>
+            <h2>Novo cadastro realizado</h2>
+            <p>O usuário <strong>${name}</strong> foi cadastrado e está aguardando aprovação.</p>
             `
-        });
+            });
+        } catch (error) {
+            console.error("Erro ao enviar email de notificação:", error);
+        }
 
         return { message: "Usuário cadastrado com sucesso", id: (await docRef).id };
     }
