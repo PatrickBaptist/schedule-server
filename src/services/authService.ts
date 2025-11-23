@@ -111,7 +111,7 @@ export class AuthService {
             createdAt: new Date().toISOString(),
         };
 
-        const docRef = this.collection.add(newUser);
+        const docRef = await this.collection.add(newUser);
 
         const leadersSnap = await this.collection
             .where("rolesLower", "array-contains-any", [UserRole.Admin, UserRole.Leader])
@@ -123,12 +123,12 @@ export class AuthService {
 
         try {
             await this.emailService.sendLeaderNotification({
-            to: emailsToNotify,
-            subject: "Novo usuário aguardando aprovação",
-            html: `
-            <h2>Novo cadastro realizado</h2>
-            <p>O usuário <strong>${name}</strong> foi cadastrado e está aguardando aprovação.</p>
-            `
+                to: emailsToNotify,
+                subject: "Novo usuário aguardando aprovação",
+                html: `
+                <h2>Novo cadastro realizado</h2>
+                <p>O usuário <strong>${name}</strong> foi cadastrado e está aguardando aprovação.</p>
+                `
             });
         } catch (error) {
             console.error("Erro ao enviar email de notificação:", error);
