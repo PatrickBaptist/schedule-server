@@ -1,4 +1,4 @@
-import { UpdateUserDto } from "../dtos/user.dto";
+import { UpdateUserDto, User } from "../dtos/user.dto";
 import { UserRole } from "../enums/UserRoles";
 import { UserStatus } from "../enums/UserStatus";
 import { db } from "../repositories/firebaseService";
@@ -10,13 +10,13 @@ export class UserService {
         this.collection = db.collection("users");
     }
 
-    async getAllUsers() {
+    async getAllUsers(): Promise<User[]> {
         const snapshot = await this.collection.get();
         if (snapshot.empty) return [];
 
         return snapshot.docs.map((doc) => {
-        const { passwordHash, rolesLower, createdAt, updatedAt, ...data } = doc.data();
-        return { id: doc.id, ...data };
+            const data = doc.data() as Omit<User, "id">;
+            return { id: doc.id, ...data };
         });
     }
 

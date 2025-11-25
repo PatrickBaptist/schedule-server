@@ -9,6 +9,7 @@ import usersRouter from './routes/usersRoutes';
 
 import { config } from 'dotenv';
 import helmet from 'helmet';
+import { startBirthdayCron } from './cron/birthdayCron';
 
 config();
 
@@ -35,6 +36,8 @@ app.use(cors(
         }
     }
 ));
+
+startBirthdayCron();
 
 app.use("/auth", authUserRoutes);
 app.use("/users", usersRouter);
