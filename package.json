@@ -35,6 +35,8 @@
     "@types/helmet": "^0.0.48",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.2.1",
-    "@types/nodemailer": "^7.0.4"
+    "@types/nodemailer": "^7.0.4",
+    "@types/react": "^19.2.7",
+    "react": "^19.2.0"
   }
 }
