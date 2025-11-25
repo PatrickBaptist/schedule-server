@@ -1,29 +1,18 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 export class EmailService {
-  private transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
+  private resend = new Resend(process.env.RESEND_API_KEY);
 
   async sendLeaderNotification(data: {
     to: string[];
     subject: string;
     html?: string;
   }) {
-
-    const mailOptions = {
-      from: `"Sistema de Escala" <${process.env.EMAIL_USER}>`,
-      to: data.to.join(","),
+    await this.resend.emails.send({
+      from: "Sistema de Escala <no-reply@ibmmlouvor.com.br>",
+      to: data.to,
       subject: data.subject,
-      html: data.html,
-    };
-
-    await this.transporter.sendMail(mailOptions);
+      html: data.html ?? "",
+    });
   }
 }

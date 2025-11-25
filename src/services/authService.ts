@@ -127,14 +127,14 @@ export class AuthService {
                 subject: "Novo usuário aguardando aprovação",
                 html: `
                 <h2>Novo cadastro realizado</h2>
-                <p>O usuário <strong>${name}</strong> foi cadastrado e está aguardando aprovação.</p>
+                <p>O usuário <strong>${name}(${nickname})</strong> foi cadastrado e está aguardando aprovação.</p>
                 `
             });
         } catch (error) {
             console.error("Erro ao enviar email de notificação:", error);
         }
 
-        return { message: "Usuário cadastrado com sucesso", id: (await docRef).id };
+        return { message: "Usuário cadastrado com sucesso", id: docRef.id };
     }
 
     async me(token: string) {
