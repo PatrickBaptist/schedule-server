@@ -19,12 +19,12 @@ export function startWeeklyVerseCron() {
             return;
         }
 
-      const verse = await verseService.getVerseOfTheDay();
+      const { verse, reference } = await verseService.getVerseOfTheDay();
 
       const html = `
-        <p>Olá, pessoal!</p>
+        <p>Bom dia! 😄</p>
         <p>Uma palavra para inspirar seu domingo:</p>
-        <blockquote>${verse}</blockquote>
+        <blockquote>${verse} - ${reference}</blockquote>
         <p>Com carinho,<br><strong>Ministério de Louvor</strong></p>
       `;
 
