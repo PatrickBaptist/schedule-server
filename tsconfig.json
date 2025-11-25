@@ -6,7 +6,7 @@
     "outDir": "./dist",
     "strict": true,
     "esModuleInterop": true,
-    "lib": ["es2017"],
+    "lib": ["es2017", "dom"],
     "types": ["node", "express"],
     "typeRoots": ["./src/types", "./node_modules/@types"]
   }
