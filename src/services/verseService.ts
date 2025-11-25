@@ -24,13 +24,21 @@ export class VerseService {
       const res = await fetch(this.API_URL);
       const data = (await res.json()) as OurMannaResponse;
       const verseEN = data.verse.details.text;
+      const refEN = data.verse.details.reference;
 
       const versePT = await translate(verseEN, { to: "pt" });
+      const refPT = await translate(refEN, { to "pt" });
 
-      return versePT;
+      return {
+        verse: versePT,
+        reference: refPT,
+      };
     } catch (error) {
       console.error("Erro ao buscar ou traduzir o versículo:", error);
-      return "Que Deus abençoe seu dia!"; // fallback
+      return {
+          verse: "Que Deus abençoe seu dia!",
+          reference: "",
+        };
     }
   }
 }
