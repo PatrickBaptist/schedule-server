@@ -11,6 +11,7 @@ import { config } from 'dotenv';
 import helmet from 'helmet';
 import { startBirthdayCron } from './cron/birthdayCron';
 import { startWeeklyMusicCron } from './cron/weeklyEmails';
+import { startWeeklyVerseCron } from './cron/sendVerseCron';
 
 config();
 
@@ -40,6 +41,7 @@ app.use(cors(
 
 startBirthdayCron();
 startWeeklyMusicCron();
+startWeeklyVerseCron();
 
 app.use("/auth", authUserRoutes);
 app.use("/users", usersRouter);
