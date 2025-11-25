@@ -19,7 +19,7 @@ interface OurMannaResponse {
 export class VerseService {
   private API_URL = "https://beta.ourmanna.com/api/v1/get/?format=json";
 
-  async getVerseOfTheDay(): Promise<string> {
+  async getVerseOfTheDay(): Promise<{ verse: string; reference: string }> {
     try {
       const res = await fetch(this.API_URL);
       const data = (await res.json()) as OurMannaResponse;
