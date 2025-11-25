@@ -4,6 +4,7 @@ import convertToEmbedUrl from "../utils/convertVideos";
 import { remove as removeAccents } from "diacritics";
 import { UserRole } from "../enums/UserRoles";
 import jwt from "jsonwebtoken";
+import { MusicService } from "../services/musicService";
 
 type MusicLinkData = {
   id: string;
@@ -27,23 +28,11 @@ function normalizeString(str: string) {
 }
 
 export const getMusicLinks = async (req: Request, res: Response): Promise<void> => {
+  const musicService = new MusicService();
   try {
-    const musicLinksCollection = db.collection("musicLinks");
-
-    const snapshot = await musicLinksCollection.orderBy("order", "asc").get();
-
-    if (snapshot.empty) {
-      res.status(200).json([]);
-      return;
-    }
-
-    const musicLinks = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
+    
+    const musicLinks = await musicService.fetchWeeklyMusicLinks();
     res.status(200).json(musicLinks);
-
   } catch (error) {
     console.error("Erro ao buscar músicas:", error);
     res.status(500).json({ message: "Erro ao buscar músicas", error: String(error) });

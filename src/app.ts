@@ -10,6 +10,7 @@ import usersRouter from './routes/usersRoutes';
 import { config } from 'dotenv';
 import helmet from 'helmet';
 import { startBirthdayCron } from './cron/birthdayCron';
+import { startWeeklyMusicCron } from './cron/weeklyEmails';
 
 config();
 
@@ -38,6 +39,7 @@ app.use(cors(
 ));
 
 startBirthdayCron();
+startWeeklyMusicCron();
 
 app.use("/auth", authUserRoutes);
 app.use("/users", usersRouter);
