@@ -27,7 +27,7 @@ export class VerseService {
       const refEN = data.verse.details.reference;
 
       const versePT = await translate(verseEN, { to: "pt" });
-      const refPT = await translate(refEN, { to "pt" });
+      const refPT = await translate(refEN, { to: "pt" });
 
       return {
         verse: versePT,
