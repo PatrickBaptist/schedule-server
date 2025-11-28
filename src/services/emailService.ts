@@ -9,7 +9,7 @@ export class EmailService {
     html?: string;
   }) {
     await this.resend.emails.send({
-      from: "Sistema de Escala <no-reply@ibmmlouvor.com.br>",
+      from: "Ministério de Louvor <no-reply@ibmmlouvor.com.br>",
       to: data.to,
       subject: data.subject,
       html: data.html ?? "",
