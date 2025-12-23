@@ -6,12 +6,10 @@ import allMusicLinksRoutes from './routes/allMusicLinksRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import authUserRoutes from './routes/authUserRoutes';
 import usersRouter from './routes/usersRoutes';
+import cronsRoutes from './routes/cronsRoutes';
 
 import { config } from 'dotenv';
 import helmet from 'helmet';
-import { runBirthdayJob } from './cron/birthdayCron';
-import { runWeeklyMusicJob } from './cron/weeklyEmails';
-import { runWeeklyVerseJob } from './cron/sendVerseCron';
 
 config();
 
@@ -39,20 +37,7 @@ app.use(cors(
     }
 ));
 
-app.get("/cron/birthday", async (req, res) => {
-  await runBirthdayJob();
-  res.send("Birthday cron executed");
-});
-
-app.get("/cron/verse", async (req, res) => {
-  await runWeeklyVerseJob();
-  res.send("Verse cron executed");
-});
-
-app.get("/cron/music", async (req, res) => {
-  await runWeeklyMusicJob();
-  res.send("Music cron executed");
-});
+app.use("/cron", cronsRoutes);
 
 app.use("/auth", authUserRoutes);
 app.use("/users", usersRouter);
