@@ -151,6 +151,10 @@ export class AuthService {
 
         const userData = userDoc.data();
 
+        if (userData?.status !== UserStatus.Enabled) {
+            throw new Error("Usuário não está habilitado para login. Entre em contato com o administrador.");
+        }
+
         return {
             id: userDoc.id,
             name: userData?.name,
