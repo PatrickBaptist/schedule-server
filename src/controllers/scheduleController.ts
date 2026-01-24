@@ -160,6 +160,7 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
       if (
         typeof s.evento !== "string" ||
         typeof s.data !== "string" ||
+        typeof s.minister !== "string" ||
         typeof s.vocal1 !== "string" ||
         typeof s.vocal2 !== "string" ||
         typeof s.teclas !== "string" ||
