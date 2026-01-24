@@ -166,7 +166,8 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
         typeof s.violao !== "string" ||
         typeof s.batera !== "string" ||
         typeof s.bass !== "string" ||
-        typeof s.guita !== "string"
+        typeof s.guita !== "string" ||
+        typeof s.sound !== "string"
       ) {
         res.status(400).json({ message: "Objeto 'SpecialSchedule' inválido." });
         return;
