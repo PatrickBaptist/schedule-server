@@ -11,6 +11,7 @@ export class AuthController {
 
       const result = await authService.login(dto);
       res.status(200).json( result );
+      console.log("Usuário logado")
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }
@@ -22,6 +23,7 @@ export class AuthController {
 
       const result = await authService.register(dto);
       res.status(201).json( result );
+      console.log("Usuário cadastrado")
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }

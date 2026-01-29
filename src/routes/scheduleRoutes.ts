@@ -11,7 +11,7 @@ router.get("/next-sunday", getNextSundaySchedule);
 router.get("/special-schedule", getSpecialSchedules);
 router.get("/:month", getMonthlySchedule);
 
-router.post("/", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader, UserRole.Minister), upsertSchedule);
+router.post("/", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), upsertSchedule);
 router.post("/special-schedule", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader),  postSpecialSchedules);
 
 router.delete("/special-schedule/:id", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), deleteSpecialSchedules);
