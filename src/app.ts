@@ -47,6 +47,10 @@ app.use("/musicList", musicListRoutes);
 app.use("/allMusicLinks", allMusicLinksRoutes);
 app.use("/notification", notificationRoutes);
 
+app.get('/ping', (req, res) => {
+    res.status(200).json({ message: 'Sistema funcionando' })
+});
+
 app.listen(port, () => {console.log(`Servidor rodando na porta ${port}`)});
 
 export default app;
