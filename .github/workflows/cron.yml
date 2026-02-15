@@ -1,0 +1,64 @@
+name: IBMMLouvor Cron Jobs
+
+on:
+  schedule:
+    - cron: '0 12 * * *'     # Birthday todo dia 09:00 Brasil
+    - cron: '0 12 * * 1'     # Versículo segunda 09:00 Brasil
+    - cron: '5 12 * * 1'     # Músicas segunda 09:05 Brasil
+    - cron: '10 12 * * 1'    # Delete músicas segunda 09:10 Brasil
+  workflow_dispatch:
+
+jobs:
+  run-crons:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Aguardar Render acordar
+        run: |
+          echo "Aguardando servidor acordar..."
+          sleep 50
+
+      - name: Birthday
+        if: github.event.schedule == '1 10 * * *'
+        run: |
+          for i in {1..10}
+          do
+            echo "Tentativa $i"
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/birthday)
+            echo "Status: $STATUS"
+            if [ "$STATUS" = "200" ]; then
+              echo "Sucesso!"
+              break
+            fi
+            sleep 20
+          done
+
+      - name: Versículo
+        if: github.event.schedule == '0 10 * * 0'
+        run: |
+          for i in {1..10}
+          do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/verse)
+            if [ "$STATUS" = "200" ]; then break; fi
+            sleep 20
+          done
+
+      - name: Músicas
+        if: github.event.schedule == '0 10 * * 6'
+        run: |
+          for i in {1..10}
+          do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/music)
+            if [ "$STATUS" = "200" ]; then break; fi
+            sleep 20
+          done
+
+      - name: Delete músicas
+        if: github.event.schedule == '2 10 * * 1'
+        run: |
+          for i in {1..10}
+          do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/delete-musics-weekly)
+            if [ "$STATUS" = "200" ]; then break; fi
+            sleep 20
+          done
