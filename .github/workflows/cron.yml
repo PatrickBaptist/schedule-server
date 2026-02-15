@@ -2,10 +2,10 @@ name: IBMMLouvor Cron Jobs
 
 on:
   schedule:
-    - cron: '0 12 * * *'     # Birthday todo dia 09:00 Brasil
-    - cron: '0 12 * * 1'     # Versículo segunda 09:00 Brasil
-    - cron: '5 12 * * 1'     # Músicas segunda 09:05 Brasil
-    - cron: '10 12 * * 1'    # Delete músicas segunda 09:10 Brasil
+    - cron: '0 12 * * *'      # Birthday todo dia 09:00 Brasil
+    - cron: '0 12 * * 1'      # Versículo segunda 09:00 Brasil
+    - cron: '5 12 * * 1'      # Músicas segunda 09:05 Brasil
+    - cron: '10 12 * * 1'     # Delete músicas segunda 09:10 Brasil
   workflow_dispatch:
 
 jobs:
@@ -14,12 +14,10 @@ jobs:
 
     steps:
       - name: Aguardar Render acordar
-        run: |
-          echo "Aguardando servidor acordar..."
-          sleep 50
+        run: sleep 50
 
       - name: Birthday
-        if: github.event.schedule == '1 10 * * *'
+        if: github.event.schedule == '0 12 * * *'
         run: |
           for i in {1..10}
           do
@@ -34,7 +32,7 @@ jobs:
           done
 
       - name: Versículo
-        if: github.event.schedule == '0 10 * * 0'
+        if: github.event.schedule == '0 12 * * 1'
         run: |
           for i in {1..10}
           do
@@ -44,7 +42,7 @@ jobs:
           done
 
       - name: Músicas
-        if: github.event.schedule == '0 10 * * 6'
+        if: github.event.schedule == '5 12 * * 1'
         run: |
           for i in {1..10}
           do
@@ -54,7 +52,7 @@ jobs:
           done
 
       - name: Delete músicas
-        if: github.event.schedule == '2 10 * * 1'
+        if: github.event.schedule == '10 12 * * 1'
         run: |
           for i in {1..10}
           do
