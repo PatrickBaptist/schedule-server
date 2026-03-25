@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { db } from "../repositories/firebaseService";
 import convertToEmbedUrl from "../utils/convertVideos";
 import { remove as removeAccents } from "diacritics";
+import { UserRole } from "../enums/UserRoles";
 
 interface MusicLink {
   name: string;
@@ -27,6 +28,19 @@ function normalizeString(str: string) {
 }
 
 export const getAllMusicLinks = async (req: Request, res: Response): Promise<void> => {
+  const user = req.user;
+
+  if (user?.role?.includes(UserRole.Guest)) {
+    res.status(200).json({
+      page: 1,
+      limit: 0,
+      results: [],
+      hasNextPage: false,
+      hasPrevPage: false,
+    });
+    return;
+  }
+
   try {
     const { page = "1", limit = "10", search = "" } = req.query;
 

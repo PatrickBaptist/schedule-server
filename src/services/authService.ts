@@ -163,4 +163,53 @@ export class AuthService {
             roles: userData?.roles,
         }
     }
+
+    async loginGuest() {
+        const guestEmail = process.env.GUEST_EMAIL;
+
+        if (!guestEmail) {
+            throw new Error("Guest não configurado");
+        }
+
+        const userSnap = await this.collection
+            .where("email", "==", guestEmail)
+            .limit(1)
+            .get();
+
+        if (userSnap.empty) {
+            throw new Error("Usuário guest não encontrado");
+        }
+
+        const userDoc = userSnap.docs[0];
+        const userData = userDoc.data();
+
+        if (userData.status !== UserStatus.Enabled) {
+            throw new Error("Usuário guest desabilitado");
+        }
+
+        if (!process.env.JWT_SECRET) {
+            throw new Error("JWT_SECRET não definido");
+        }
+
+        const token = jwt.sign(
+            {
+            userId: userDoc.id,
+            name: userData.name,
+            email: userData.email,
+            role: userData.roles,
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "1d" }
+        );
+
+        return {
+            token,
+            user: {
+            id: userDoc.id,
+            name: userData.name,
+            email: userData.email,
+            roles: userData.roles,
+            },
+        };
+    }
 }

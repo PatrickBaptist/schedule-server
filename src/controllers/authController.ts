@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/authService";
 import { LoginUserDto, RegisterUserDto } from "../dtos/auth.dto";
+import { UserRole } from "../enums/UserRoles";
 
 const authService = new AuthService();
 
@@ -45,7 +46,25 @@ export class AuthController {
       }
 
       const user = await authService.me(token);
+
+      if (user.roles?.includes(UserRole.Guest)) {
+        const { email, ...safeUser } = user;
+        res.status(200).json(safeUser);
+        return;
+      }
+
       res.status(200).json( user );
+    } catch (error: any) {
+      res.status(401).json({ message: error.message });
+    }
+  }
+
+  static async loginGuest(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await authService.loginGuest();
+
+      res.status(200).json( result );
+      console.log("Convidado logado")
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }
