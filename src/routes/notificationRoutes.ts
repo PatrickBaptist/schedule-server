@@ -6,8 +6,8 @@ import { authenticateToken } from '../middlewares/authorizatizeToken';
 
 const router = Router();
 
-router.get('/', getNotification);
-router.get('/warning', getWarnings);
+router.get('/', authenticateToken, getNotification);
+router.get('/warning', authenticateToken, getWarnings);
 
 router.post('/', authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), postNotification);
 router.post('/warning', authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), postWarnings);

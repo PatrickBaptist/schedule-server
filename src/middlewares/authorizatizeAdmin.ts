@@ -19,9 +19,9 @@ export function authorizeRoles(
       return;
     }
 
-    const roles = Array.isArray(user.role)
-      ? user.role
-      : [user.role];
+    const roles = Array.isArray(user.roles)
+      ? user.roles
+      : [user.roles];
 
     if (args.length === 1 && typeof args[0] === "object" && "exclude" in args[0]) {
       const blockedRoles = (args[0] as RoleOptions).exclude || [];

@@ -3,7 +3,7 @@ import { UserRole } from "../enums/UserRoles";
 export interface AuthenticatedUser {
   id: string;
   email: string;
-  role: UserRole;
+  roles: UserRole;
   canLeadWorship?: boolean;
 }
 

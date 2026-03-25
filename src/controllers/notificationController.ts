@@ -1,8 +1,16 @@
 import { Request, Response } from "express";
 import { admin, db } from "../repositories/firebaseService";
+import { UserRole } from "../enums/UserRoles";
 
 export const getNotification = async (req: Request, res: Response): Promise<void> => {
   try {
+    const user = req.user;
+
+    if (user?.roles?.includes(UserRole.Guest)) {
+      res.status(200).json(null);
+      return;
+    }
+
     const docRef = db.collection('notifications').doc('current');
     const docSnap = await docRef.get();
 
@@ -40,6 +48,13 @@ export const postNotification = async (req: Request, res: Response): Promise<voi
 
 export const getWarnings = async (req: Request, res: Response) => {
   try {
+    const user = req.user;
+
+    if (user?.roles?.includes(UserRole.Guest)) {
+      res.status(200).json(null);
+      return;
+    }
+
     const docRef = db.collection("warnings").doc("current");
     const docSnap = await docRef.get();
 
