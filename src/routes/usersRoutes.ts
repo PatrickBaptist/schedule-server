@@ -6,7 +6,7 @@ import { UserController } from "../controllers/usersController";
 
 const router = Router();
 
-router.get("/", UserController.getAllUsers);
+router.get("/", authenticateToken, UserController.getAllUsers);
 router.get("/all", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), UserController.getUsers);
 
 router.get("/:id", UserController.getUserById);

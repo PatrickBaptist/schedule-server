@@ -1,6 +1,7 @@
 import { UpdateUserDto, User } from "../dtos/user.dto";
 import { UserRole } from "../enums/UserRoles";
 import { UserStatus } from "../enums/UserStatus";
+import { AuthenticatedUser } from "../models/authenticated";
 import { db } from "../repositories/firebaseService";
 
 export class UserService {
@@ -10,13 +11,36 @@ export class UserService {
         this.collection = db.collection("users");
     }
 
-    async getAllUsers(): Promise<User[]> {
+    async getAllUsers(): Promise<Partial<User>[]> {
         const snapshot = await this.collection.get();
         if (snapshot.empty) return [];
 
         return snapshot.docs.map((doc) => {
+            const data = doc.data();
+
+            return { 
+                id: doc.id,
+                name: data.name,
+                nickname: data.nickname,
+                email: data.email,
+                roles: data.roles,
+                status: data.status
+             };
+        });
+    }
+
+    async getGuestViewUsers(): Promise<Partial<User>[]> {
+        const snapshot = await this.collection.get();
+        if (snapshot.empty) return [];
+
+        return snapshot.docs.map(doc => {
             const data = doc.data() as Omit<User, "id">;
-            return { id: doc.id, ...data };
+            return {
+                id: doc.id,
+                nickname: data.nickname,
+                roles: data.roles,
+                status: data.status
+            };
         });
     }
 

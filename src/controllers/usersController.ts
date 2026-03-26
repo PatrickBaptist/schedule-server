@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/usersService";
 import { UpdateUserDto } from "../dtos/user.dto";
+import { UserRole } from "../enums/UserRoles";
 
 const userService = new UserService();
 
@@ -8,7 +9,16 @@ export class UserController {
 
     static async getAllUsers(req: Request, res: Response): Promise<void> {
         try {
-            const users = await userService.getAllUsers();
+            const userRoles = req.user?.role;
+            let users;
+
+            if (userRoles?.includes(UserRole.Guest)) {
+                users = await userService.getGuestViewUsers();
+            } else {
+                // Usuários normais
+                users = await userService.getAllUsers();
+            }
+
             res.status(200).json(users);
         } catch (error) {
             console.error("Erro ao buscar usuários:", error);

@@ -22,7 +22,7 @@ export async function runBirthdayJob() {
 
   for (const bUser of birthdayUsers) {
     await emailService.sendLeaderNotification({
-      to: [bUser.email],
+      to: [bUser.email!],
       subject: "🎉 Feliz aniversário!",
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color:#333;">
@@ -57,7 +57,7 @@ export async function runBirthdayJob() {
       `,
     });
 
-    const others = users.filter((u) => u.id !== bUser.id).map((u) => u.email);
+    const others = users.filter((u) => u.id !== bUser.id).map((u) => u.email!);
 
     if (others.length > 0) {
       await emailService.sendLeaderNotification({

@@ -41,7 +41,7 @@ export async function runWeeklyVerseJob() {
     </div>
   `;
 
-  const allEmails = users.map(u => u.email).filter(Boolean);
+  const allEmails = users.map(u => u.email!).filter(Boolean);
 
   await emailService.sendLeaderNotification({
     to: allEmails,

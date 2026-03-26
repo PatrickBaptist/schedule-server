@@ -195,7 +195,7 @@ export class AuthService {
             {
             userId: userDoc.id,
             name: userData.name,
-            roles: userData.roles,
+            role: userData.roles,
             },
             process.env.JWT_SECRET,
             { expiresIn: "1d" }
