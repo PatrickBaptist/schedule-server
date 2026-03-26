@@ -30,7 +30,7 @@ function normalizeString(str: string) {
 export const getAllMusicLinks = async (req: Request, res: Response): Promise<void> => {
   const user = req.user;
 
-  if (user?.roles?.includes(UserRole.Guest)) {
+  if (user?.role?.includes(UserRole.Guest)) {
     res.status(200).json({
       page: 1,
       limit: 0,

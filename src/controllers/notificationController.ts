@@ -6,7 +6,7 @@ export const getNotification = async (req: Request, res: Response): Promise<void
   try {
     const user = req.user;
 
-    if (user?.roles?.includes(UserRole.Guest)) {
+    if (user?.role?.includes(UserRole.Guest)) {
       res.status(200).json(null);
       return;
     }
@@ -50,7 +50,7 @@ export const getWarnings = async (req: Request, res: Response) => {
   try {
     const user = req.user;
 
-    if (user?.roles?.includes(UserRole.Guest)) {
+    if (user?.role?.includes(UserRole.Guest)) {
       res.status(200).json(null);
       return;
     }

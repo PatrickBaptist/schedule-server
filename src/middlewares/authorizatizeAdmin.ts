@@ -19,9 +19,9 @@ export function authorizeRoles(
       return;
     }
 
-    const roles = Array.isArray(user.roles)
-      ? user.roles
-      : [user.roles];
+    const roles = Array.isArray(user.role)
+      ? user.role
+      : [user.role];
 
     if (args.length === 1 && typeof args[0] === "object" && "exclude" in args[0]) {
       const blockedRoles = (args[0] as RoleOptions).exclude || [];
@@ -41,7 +41,7 @@ export function authorizeRoles(
     const hasRole = roles.some(r => allowedRoles.includes(r));
 
     if (!hasRole) {
-      res.status(403).json({ message: "Acesso negado" });
+      res.status(403).json({ message: "Acesso negadossssss" });
       return;
     }
 
