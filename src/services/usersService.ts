@@ -24,7 +24,8 @@ export class UserService {
                 nickname: data.nickname,
                 email: data.email,
                 roles: data.roles,
-                status: data.status
+                status: data.status,
+                birthDate: data.birthDate
              };
         });
     }
