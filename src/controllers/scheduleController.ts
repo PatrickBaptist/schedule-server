@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { db } from "../repositories/firebaseService";
-import { clearMusicLinksIfChanged } from "../utils/clearMusicLinks";
 
 interface SpecialSchedule {
   evento: string;
@@ -65,9 +64,6 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
 
     const nextSundayISO = nextSunday.toISOString().split('T')[0];
 
-    // Chama a função que limpa musicLinks se a escala mudou
-    const clearedMusicLinks = await clearMusicLinksIfChanged(nextSundayISO);
-
     const matchingSchedule = sundays.find((s: any) => {
       const sundayDate = new Date(s.date).toISOString().split('T')[0];
       return sundayDate === nextSundayISO;
@@ -81,7 +77,6 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
     res.json({
       date: nextSundayISO,
       ...matchingSchedule.músicos,
-      clearedMusicLinks,
     });
 
   } catch (err) {
