@@ -18,6 +18,12 @@ export class UserService {
         return snapshot.docs.map((doc) => {
             const data = doc.data();
 
+            const lastSeenDate = data.lastSeen?.toDate();
+
+            const isOnline = lastSeenDate
+            ? Date.now() - lastSeenDate.getTime() < 5 * 60 * 1000
+            : false;
+
             return { 
                 id: doc.id,
                 name: data.name,
@@ -25,7 +31,9 @@ export class UserService {
                 email: data.email,
                 roles: data.roles,
                 status: data.status,
-                birthDate: data.birthDate
+                birthDate: data.birthDate,
+                isOnline,
+                lastSeen: lastSeenDate?.toISOString()
              };
         });
     }
