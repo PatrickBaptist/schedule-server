@@ -7,6 +7,8 @@ import notificationRoutes from './routes/notificationRoutes';
 import authUserRoutes from './routes/authUserRoutes';
 import usersRouter from './routes/usersRoutes';
 import cronsRoutes from './routes/cronsRoutes';
+import auditRoutes from './routes/auditRoutes';
+import { auditMiddleware } from './middlewares/auditMiddleware';
 
 import { config } from 'dotenv';
 import helmet from 'helmet';
@@ -17,6 +19,7 @@ const port = process.env.PORT || 3000;
 const app = express();
 
 app.use(express.json());
+app.use(auditMiddleware);
 
 app.use(helmet({
     crossOriginResourcePolicy: false
@@ -41,6 +44,7 @@ app.use("/cron", cronsRoutes);
 
 app.use("/auth", authUserRoutes);
 app.use("/users", usersRouter);
+app.use("/audit", auditRoutes);
 
 app.use("/schedule", scheduleRoutes);
 app.use("/musicList", musicListRoutes);

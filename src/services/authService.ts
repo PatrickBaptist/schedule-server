@@ -46,7 +46,12 @@ export class AuthService {
         }
 
         const token = jwt.sign({
-            userId: userDoc.id, name: userData.name, email: userData.email, role: userData.roles },
+            userId: userDoc.id,
+            name: userData.name,
+            email: userData.email,
+            role: userData.roles,
+            roles: userData.roles,
+        },
             process.env.JWT_SECRET,
             { expiresIn: "30d" }
         );
@@ -196,6 +201,7 @@ export class AuthService {
             userId: userDoc.id,
             name: userData.name,
             role: userData.roles,
+            roles: userData.roles,
             },
             process.env.JWT_SECRET,
             { expiresIn: "1d" }

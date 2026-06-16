@@ -1,7 +1,6 @@
 import { UpdateUserDto, User } from "../dtos/user.dto";
 import { UserRole } from "../enums/UserRoles";
 import { UserStatus } from "../enums/UserStatus";
-import { AuthenticatedUser } from "../models/authenticated";
 import { db } from "../repositories/firebaseService";
 
 export class UserService {
@@ -17,14 +16,13 @@ export class UserService {
 
         return snapshot.docs.map((doc) => {
             const data = doc.data();
-
             const lastSeenDate = data.lastSeen?.toDate();
 
             const isOnline = lastSeenDate
-            ? Date.now() - lastSeenDate.getTime() < 5 * 60 * 1000
-            : false;
+                ? Date.now() - lastSeenDate.getTime() < 5 * 60 * 1000
+                : false;
 
-            return { 
+            return {
                 id: doc.id,
                 name: data.name,
                 nickname: data.nickname,
@@ -33,8 +31,8 @@ export class UserService {
                 status: data.status,
                 birthDate: data.birthDate,
                 isOnline,
-                lastSeen: lastSeenDate?.toISOString()
-             };
+                lastSeen: lastSeenDate?.toISOString(),
+            };
         });
     }
 
@@ -42,28 +40,27 @@ export class UserService {
         const snapshot = await this.collection.get();
         if (snapshot.empty) return [];
 
-        return snapshot.docs.map(doc => {
+        return snapshot.docs.map((doc) => {
             const data = doc.data() as Omit<User, "id">;
             return {
                 id: doc.id,
                 nickname: data.nickname,
                 roles: data.roles,
-                status: data.status
+                status: data.status,
             };
         });
     }
 
     async getUserById(id: string) {
-        if (!id) throw new Error("ID do usuário obrigatório");
-        
+        if (!id) throw new Error("ID do usuário obrigatório");
+
         const docRef = this.collection.doc(id);
         const docSnap = await docRef.get();
 
-        if (!docSnap.exists) throw new Error("Usuário não encontrado");
+        if (!docSnap.exists) throw new Error("Usuário não encontrado");
 
         const { passwordHash, rolesLower, createdAt, updatedAt, ...user } = docSnap.data()!;
         return { id: docSnap.id, ...user };
-
     }
 
     async getUsers(status?: string, role?: string) {
@@ -88,8 +85,8 @@ export class UserService {
     }
 
     async updateUser(id: string, data: UpdateUserDto) {
-        if (!id) throw new Error("ID do usuário obrigatório");
-        
+        if (!id) throw new Error("ID do usuário obrigatório");
+
         if (data.passwordHash) delete data.passwordHash;
 
         if (data.roles) {
@@ -111,7 +108,7 @@ export class UserService {
         const docRef = this.collection.doc(id);
         const docSnap = await docRef.get();
 
-        if (!docSnap.exists) throw new Error("Usuário não encontrado");
+        if (!docSnap.exists) throw new Error("Usuário não encontrado");
 
         await docRef.update({
             ...data,
@@ -120,23 +117,29 @@ export class UserService {
 
         const updatedUserDoc = await docRef.get();
         const { passwordHash, rolesLower, createdAt, updatedAt, ...userData } = updatedUserDoc.data()!;
-        
-        return { id: updatedUserDoc.id, ...userData };
 
+        return { id: updatedUserDoc.id, ...userData };
     }
 
     async deleteUser(id: string) {
-
-        if (!id) throw new Error("ID do usuário obrigatório");
+        if (!id) throw new Error("ID do usuário obrigatório");
 
         const docRef = this.collection.doc(id);
         const docSnap = await docRef.get();
 
-        if (!docSnap.exists) throw new Error("Usuário não encontrado");
+        if (!docSnap.exists) throw new Error("Usuário não encontrado");
 
+        const userData = docSnap.data();
         await docRef.delete();
 
-        return { message: "Usuário removido com sucesso" };
-
+        return {
+            message: "Usuário removido com sucesso",
+            user: {
+                id: docSnap.id,
+                name: userData?.name ?? null,
+                email: userData?.email ?? null,
+                roles: userData?.roles ?? [],
+            },
+        };
     }
 }

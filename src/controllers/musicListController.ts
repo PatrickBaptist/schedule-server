@@ -272,7 +272,14 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
       );
     }
 
-    res.status(200).json({ message: "Musica atualizada com sucesso" });
+    res.status(200).json({
+      message: "Musica atualizada com sucesso",
+      music: {
+        id,
+        name,
+        worshipMoment,
+      },
+    });
 
   } catch (error) {
     console.error("Erro ao atualizar musica:", error);
@@ -290,6 +297,8 @@ export const deleteMusicLink = async (req: Request, res: Response): Promise<void
     }
 
     const docRef = db.collection("musicLinks").doc(id);
+    const docSnap = await docRef.get();
+    const musicData = docSnap.exists ? docSnap.data() : null;
     await docRef.delete();
 
     // Após deletar, buscamos todos para reordenar
@@ -303,7 +312,14 @@ export const deleteMusicLink = async (req: Request, res: Response): Promise<void
       )
     );
 
-    res.status(200).json({ message: "Link de música removido com sucesso" });
+    res.status(200).json({
+      message: "Link de música removido com sucesso",
+      music: {
+        id,
+        name: musicData?.name ?? null,
+        worshipMoment: musicData?.worshipMoment ?? null,
+      },
+    });
     console.log("Link de musica " + id + " removido com sucesso");
 
   } catch (error) {

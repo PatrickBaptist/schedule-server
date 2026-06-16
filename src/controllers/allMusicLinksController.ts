@@ -178,7 +178,14 @@ export const updateAllMusicLink = async (req: Request, res: Response): Promise<v
       { merge: true }
     );
 
-    res.status(200).json({ message: "Musica atualizada com sucesso" });
+    res.status(200).json({
+      message: "Musica atualizada com sucesso",
+      music: {
+        id,
+        name,
+        minister,
+      },
+    });
 
   } catch (error) {
     console.error("Erro ao atualizar musica:", error);
@@ -196,9 +203,18 @@ export const deleteAllMusicLink = async (req: Request, res: Response): Promise<v
     }
 
     const docRef = db.collection("allMusicLinks").doc(id);
+    const docSnap = await docRef.get();
+    const musicData = docSnap.exists ? docSnap.data() : null;
     await docRef.delete();
 
-    res.status(200).json({ message: "Link de música removido com sucesso" });
+    res.status(200).json({
+      message: "Link de música removido com sucesso",
+      music: {
+        id,
+        name: musicData?.name ?? null,
+        minister: musicData?.minister ?? null,
+      },
+    });
     console.log("Link de musica " + id + " removido com sucesso");
 
   } catch (error) {
