@@ -223,9 +223,8 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     }
 
     const oldData = docSnap.data();
-    const oldOrder = docSnap.data()?.order ?? 1;
 
-    const embedLink = convertToEmbedUrl(link)
+    const embedLink = convertToEmbedUrl(link);
 
     // Garante que o minister não seja perdido
     const finalMinister = ministeredBy || oldData?.minister || null;
@@ -248,29 +247,6 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
       },
       { merge: true } // merge = não sobrescreve tudo, só atualiza os campos enviados
     );
-
-    // Se a ordem mudou, precisamos reorganizar os outros
-    if (oldOrder !== order) {
-      const snapshot = await db.collection("musicLinks").orderBy("order", "asc").get();
-
-      const allDocs: MusicLinkData[] = snapshot.docs.map((d) => {
-        const data = d.data() as Omit<MusicLinkData, "id">;
-        return { id: d.id, ...data };
-      });
-
-      // Remove o item antigo da lista
-      const filtered = allDocs.filter(item => item.id !== id);
-
-      // Insere o item na nova posição
-      filtered.splice(order - 1, 0, { id, name, link: embedLink, letter, cifra, order }); // insere na nova posição
-
-      // Atualiza os `order` de todos com base na nova posição
-      await Promise.all(
-        filtered.map((item, index) =>
-          db.collection("musicLinks").doc(item.id).update({ order: index + 1 })
-        )
-      );
-    }
 
     res.status(200).json({
       message: "Musica atualizada com sucesso",
