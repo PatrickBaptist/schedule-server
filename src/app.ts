@@ -28,23 +28,9 @@ app.use(helmet({
 }));
 
 // 3. Configuração do CORS com tipagem explícita (Resolve o erro do implicitamente 'any')
+// Não fazer a MERGE dessa parte do código
 app.use(cors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-        const allowedOrigins = [
-            'https://ibmmlouvor.com.br',
-            'https://bookish-broccoli-wvpv454jq9g297pw-5173.app.github.dev',
-            'https://upgraded-yodel-r7q7x6xvvj52p46p-5173.app.github.dev',
-            'http://localhost:5173',
-            'http://localhost:3000'
-        ];
-
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.github.dev')) {
-            callback(null, true);
-        } else {
-            callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
-        }
-    },
-    credentials: true
+   origin: '*',
 }));
 
 // 4. Definição das Rotas
