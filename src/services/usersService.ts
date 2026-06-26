@@ -1,7 +1,8 @@
-import { UpdateUserDto, User } from "../dtos/user.dto";
+import { UpdateMyUserDto, UpdateUserDto, User } from "../dtos/user.dto";
 import { UserRole } from "../enums/UserRoles";
 import { UserStatus } from "../enums/UserStatus";
 import { db } from "../repositories/firebaseService";
+import { formatPhone } from "../utils/formatPhone";
 
 export class UserService {
     private collection;
@@ -112,6 +113,50 @@ export class UserService {
 
         await docRef.update({
             ...data,
+            updatedAt: new Date().toISOString(),
+        });
+
+        const updatedUserDoc = await docRef.get();
+        const { passwordHash, rolesLower, createdAt, updatedAt, ...userData } = updatedUserDoc.data()!;
+
+        return { id: updatedUserDoc.id, ...userData };
+    }
+
+    async updateMyProfile(id: string, data: UpdateMyUserDto) {
+        if (!id) throw new Error("ID do usuário obrigatório");
+
+        const docRef = this.collection.doc(id);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) throw new Error("Usuário não encontrado");
+
+        const allowedUpdate: Record<string, unknown> = {};
+        const allowedFields: Array<keyof UpdateMyUserDto> = [
+            "name",
+            "nickname",
+            "phone",
+            "photoURL",
+            "experience",
+            "notes",
+            "instruments",
+        ];
+
+        for (const field of allowedFields) {
+            if (data[field] !== undefined) {
+                allowedUpdate[field] = data[field];
+            }
+        }
+
+        if (typeof allowedUpdate.phone === "string" || allowedUpdate.phone === null) {
+            allowedUpdate.phone = formatPhone(allowedUpdate.phone as string | null);
+        }
+
+        if (Object.keys(allowedUpdate).length === 0) {
+            throw new Error("Nenhum campo válido para atualização");
+        }
+
+        await docRef.update({
+            ...allowedUpdate,
             updatedAt: new Date().toISOString(),
         });
 
