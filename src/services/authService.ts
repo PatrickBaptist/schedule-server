@@ -6,6 +6,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { EmailService } from "./emailService";
 import { UserRole } from "../enums/UserRoles";
+import { formatPhone } from "../utils/formatPhone";
 
 export class AuthService {
     private collection;
@@ -106,7 +107,7 @@ export class AuthService {
             roles,
             rolesLower: roles.map(r => r.toLowerCase()),
             status,
-            phone: phone || null,
+            phone: formatPhone(phone),
             joinedAt: joinedAt || new Date().toISOString(),
             photoURL: photoURL || null,
             instruments: instruments || [],
@@ -166,6 +167,7 @@ export class AuthService {
             email: userData?.email,
             nickname: userData?.nickname,
             roles: userData?.roles,
+            phone: userData?.phone,
         }
     }
 

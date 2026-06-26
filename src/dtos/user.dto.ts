@@ -22,3 +22,13 @@ export interface UpdateUserDto {
   status?: UserStatus;
   passwordHash?: string;
 }
+
+export interface UpdateMyUserDto {
+  name?: string;
+  nickname?: string | null;
+  phone?: string | null;
+  photoURL?: string | null;
+  experience?: string | null;
+  notes?: string | null;
+  instruments?: string[];
+}
