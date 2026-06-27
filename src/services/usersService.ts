@@ -28,6 +28,7 @@ export class UserService {
                 name: data.name,
                 nickname: data.nickname,
                 email: data.email,
+                photoURL: data.photoURL ?? null,
                 roles: data.roles,
                 status: data.status,
                 birthDate: data.birthDate,
@@ -46,6 +47,7 @@ export class UserService {
             return {
                 id: doc.id,
                 nickname: data.nickname,
+                photoURL: data.photoURL ?? null,
                 roles: data.roles,
                 status: data.status,
             };
@@ -106,6 +108,10 @@ export class UserService {
             throw new Error(`Status inválido: ${data.status}`);
         }
 
+        if (data.photoURL === null || (typeof data.photoURL === "string" && data.photoURL.trim() === "")) {
+            delete data.photoURL;
+        }
+
         const docRef = this.collection.doc(id);
         const docSnap = await docRef.get();
 
@@ -149,6 +155,14 @@ export class UserService {
 
         if (typeof allowedUpdate.phone === "string" || allowedUpdate.phone === null) {
             allowedUpdate.phone = formatPhone(allowedUpdate.phone as string | null);
+        }
+
+        if (typeof allowedUpdate.photoURL === "string" && allowedUpdate.photoURL.trim() === "") {
+            delete allowedUpdate.photoURL;
+        }
+
+        if (allowedUpdate.photoURL === null) {
+            delete allowedUpdate.photoURL;
         }
 
         if (Object.keys(allowedUpdate).length === 0) {

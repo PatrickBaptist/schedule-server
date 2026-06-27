@@ -17,6 +17,7 @@ export interface User {
 export interface UpdateUserDto {
   name?: string;
   email?: string;
+  photoURL?: string | null;
   roles?: UserRole[];
   rolesLower?: string[];
   status?: UserStatus;
