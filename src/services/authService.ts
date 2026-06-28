@@ -103,7 +103,7 @@ export class AuthService {
         const userSnap = await this.collection.where("email", "==", email).limit(1).get();
 
         let userId = "";
-        let userRoles: string[] = [UserRole.Guest];
+        let userRoles: string[] = [];
         let userStatus: UserStatus = UserStatus.Pending;
         let responsePhotoURL = photoURL;
         let message = "Usuário cadastrado com sucesso";
@@ -139,8 +139,8 @@ export class AuthService {
                 email,
                 birthDate: "",
                 passwordHash: "",
-                roles: [UserRole.Guest],
-                rolesLower: [UserRole.Guest],
+                roles: [],
+                rolesLower: [],
                 status: UserStatus.Pending,
                 phone: null,
                 joinedAt: now,
