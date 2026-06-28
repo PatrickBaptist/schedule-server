@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { AuthService } from "../services/authService";
-import { LoginUserDto, RegisterUserDto } from "../dtos/auth.dto";
+import { GoogleAuthDto, LoginUserDto, RegisterUserDto } from "../dtos/auth.dto";
 import { UserRole } from "../enums/UserRoles";
 
 const authService = new AuthService();
@@ -25,6 +25,17 @@ export class AuthController {
       const result = await authService.register(dto);
       res.status(201).json( result );
       console.log("Usuário cadastrado")
+    } catch (error: any) {
+      res.status(401).json({ message: error.message });
+    }
+  }
+
+  static async google(req: Request, res: Response): Promise<void> {
+    try {
+      const dto: GoogleAuthDto = req.body;
+
+      const result = await authService.googleAuth(dto);
+      res.status(200).json(result);
     } catch (error: any) {
       res.status(401).json({ message: error.message });
     }

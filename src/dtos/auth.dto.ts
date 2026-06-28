@@ -19,3 +19,7 @@ export interface RegisterUserDto {
   notes?: string | null;
   canLeadWorship?: boolean;
 }
+
+export interface GoogleAuthDto {
+  idToken: string;
+}

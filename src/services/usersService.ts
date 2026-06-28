@@ -1,7 +1,8 @@
-import { UpdateUserDto, User } from "../dtos/user.dto";
+import { UpdateMyUserDto, UpdateUserDto, User } from "../dtos/user.dto";
 import { UserRole } from "../enums/UserRoles";
 import { UserStatus } from "../enums/UserStatus";
 import { db } from "../repositories/firebaseService";
+import { formatPhone } from "../utils/formatPhone";
 
 export class UserService {
     private collection;
@@ -27,6 +28,7 @@ export class UserService {
                 name: data.name,
                 nickname: data.nickname,
                 email: data.email,
+                photoURL: data.photoURL ?? null,
                 roles: data.roles,
                 status: data.status,
                 birthDate: data.birthDate,
@@ -45,6 +47,7 @@ export class UserService {
             return {
                 id: doc.id,
                 nickname: data.nickname,
+                photoURL: data.photoURL ?? null,
                 roles: data.roles,
                 status: data.status,
             };
@@ -105,6 +108,10 @@ export class UserService {
             throw new Error(`Status inválido: ${data.status}`);
         }
 
+        if (data.photoURL === null || (typeof data.photoURL === "string" && data.photoURL.trim() === "")) {
+            delete data.photoURL;
+        }
+
         const docRef = this.collection.doc(id);
         const docSnap = await docRef.get();
 
@@ -112,6 +119,67 @@ export class UserService {
 
         await docRef.update({
             ...data,
+            updatedAt: new Date().toISOString(),
+        });
+
+        const updatedUserDoc = await docRef.get();
+        const { passwordHash, rolesLower, createdAt, updatedAt, ...userData } = updatedUserDoc.data()!;
+
+        return { id: updatedUserDoc.id, ...userData };
+    }
+
+    async updateMyProfile(id: string, data: UpdateMyUserDto) {
+        if (!id) throw new Error("ID do usuário obrigatório");
+
+        const docRef = this.collection.doc(id);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) throw new Error("Usuário não encontrado");
+
+        const allowedUpdate: Record<string, unknown> = {};
+        const allowedFields: Array<keyof UpdateMyUserDto> = [
+            "name",
+            "nickname",
+            "phone",
+            "photoURL",
+            "birthDate",
+            "experience",
+            "notes",
+            "instruments",
+        ];
+
+        for (const field of allowedFields) {
+            if (data[field] !== undefined) {
+                allowedUpdate[field] = data[field];
+            }
+        }
+
+        if (typeof allowedUpdate.phone === "string" || allowedUpdate.phone === null) {
+            allowedUpdate.phone = formatPhone(allowedUpdate.phone as string | null);
+        }
+
+        if (typeof allowedUpdate.photoURL === "string" && allowedUpdate.photoURL.trim() === "") {
+            delete allowedUpdate.photoURL;
+        }
+
+        if (allowedUpdate.photoURL === null) {
+            delete allowedUpdate.photoURL;
+        }
+
+        if (typeof allowedUpdate.birthDate === "string" && allowedUpdate.birthDate.trim() === "") {
+            delete allowedUpdate.birthDate;
+        }
+
+        if (allowedUpdate.birthDate === null) {
+            delete allowedUpdate.birthDate;
+        }
+
+        if (Object.keys(allowedUpdate).length === 0) {
+            throw new Error("Nenhum campo válido para atualização");
+        }
+
+        await docRef.update({
+            ...allowedUpdate,
             updatedAt: new Date().toISOString(),
         });
 

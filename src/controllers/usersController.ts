@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { UserService } from "../services/usersService";
-import { UpdateUserDto } from "../dtos/user.dto";
+import { UpdateMyUserDto, UpdateUserDto } from "../dtos/user.dto";
 import { UserRole } from "../enums/UserRoles";
 
 const userService = new UserService();
@@ -9,7 +9,7 @@ export class UserController {
 
     static async getAllUsers(req: Request, res: Response): Promise<void> {
         try {
-            const userRoles = req.user?.role;
+            const userRoles = req.user?.roles || (Array.isArray(req.user?.role) ? req.user?.role : req.user?.role ? [req.user.role] : []);
             let users;
 
             if (userRoles?.includes(UserRole.Guest)) {
@@ -56,6 +56,28 @@ export class UserController {
 
             const updatedUser = await userService.updateUser(id, dto);
             res.status(200).json({ message: "Usuário atualizado com sucesso", user: updatedUser });
+        } catch (error: any) {
+            res.status(500).json({ message: error.message });
+        }
+    }
+
+    static async updateMyUser(req: Request, res: Response): Promise<void> {
+        try {
+            const authUserId = req.user?.userId || req.user?.id;
+
+            if (!authUserId) {
+                res.status(401).json({ message: "Usuário não autenticado" });
+                return;
+            }
+
+            const dtoBody = req.body as UpdateMyUserDto & Record<string, unknown>;
+            delete dtoBody.email;
+            delete dtoBody.roles;
+            delete dtoBody.status;
+            delete dtoBody.passwordHash;
+
+            const updatedUser = await userService.updateMyProfile(authUserId, dtoBody);
+            res.status(200).json({ message: "Perfil atualizado com sucesso", user: updatedUser });
         } catch (error: any) {
             res.status(500).json({ message: error.message });
         }

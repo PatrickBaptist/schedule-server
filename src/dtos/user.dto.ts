@@ -17,8 +17,20 @@ export interface User {
 export interface UpdateUserDto {
   name?: string;
   email?: string;
+  photoURL?: string | null;
   roles?: UserRole[];
   rolesLower?: string[];
   status?: UserStatus;
   passwordHash?: string;
+}
+
+export interface UpdateMyUserDto {
+  name?: string;
+  nickname?: string | null;
+  phone?: string | null;
+  photoURL?: string | null;
+  birthDate?: string | null;
+  experience?: string | null;
+  notes?: string | null;
+  instruments?: string[];
 }

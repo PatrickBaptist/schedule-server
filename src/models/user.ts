@@ -18,5 +18,7 @@ export interface WorshipUser {
   experience?: string | null;
   notes?: string | null;
   canLeadWorship?: boolean;
+  firebaseUid?: string | null;
+  provider?: string | null;
   createdAt?: string;
 }
