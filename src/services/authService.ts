@@ -277,6 +277,7 @@ export class AuthService {
             name: userData?.name,
             email: userData?.email,
             nickname: userData?.nickname,
+            birthDate: userData?.birthDate,
             roles: userData?.roles,
             phone: userData?.phone,
             photoURL: userData?.photoURL,

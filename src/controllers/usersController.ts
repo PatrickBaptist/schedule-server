@@ -9,7 +9,7 @@ export class UserController {
 
     static async getAllUsers(req: Request, res: Response): Promise<void> {
         try {
-            const userRoles = req.user?.role;
+            const userRoles = req.user?.roles || (Array.isArray(req.user?.role) ? req.user?.role : req.user?.role ? [req.user.role] : []);
             let users;
 
             if (userRoles?.includes(UserRole.Guest)) {

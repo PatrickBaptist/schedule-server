@@ -142,6 +142,7 @@ export class UserService {
             "nickname",
             "phone",
             "photoURL",
+            "birthDate",
             "experience",
             "notes",
             "instruments",
@@ -163,6 +164,14 @@ export class UserService {
 
         if (allowedUpdate.photoURL === null) {
             delete allowedUpdate.photoURL;
+        }
+
+        if (typeof allowedUpdate.birthDate === "string" && allowedUpdate.birthDate.trim() === "") {
+            delete allowedUpdate.birthDate;
+        }
+
+        if (allowedUpdate.birthDate === null) {
+            delete allowedUpdate.birthDate;
         }
 
         if (Object.keys(allowedUpdate).length === 0) {

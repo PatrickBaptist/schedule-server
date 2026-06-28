@@ -41,7 +41,7 @@ export function authorizeRoles(
     const hasRole = roles.some(r => allowedRoles.includes(r));
 
     if (!hasRole) {
-      res.status(403).json({ message: "Acesso negadossssss" });
+      res.status(403).json({ message: "Acesso negados" });
       return;
     }
 

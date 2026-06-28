@@ -29,6 +29,7 @@ export interface UpdateMyUserDto {
   nickname?: string | null;
   phone?: string | null;
   photoURL?: string | null;
+  birthDate?: string | null;
   experience?: string | null;
   notes?: string | null;
   instruments?: string[];
