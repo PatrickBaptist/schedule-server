@@ -167,15 +167,24 @@ Regras importantes:
   - lista escalas especiais
 - `GET /schedule/:month`
   - busca a escala de um mês
+  - resposta: `músicos` com o nome atual do usuário e `músicosIds` com os IDs salvos
 - `POST /schedule/`
   - cria ou atualiza uma escala manual
   - `"admin"` ou `"leader"`
+  - o frontend deve enviar os músicos por `"ID"` em `músicosIds`
+  - formato esperado:
+    - `minister`: `"userId"`
+    - `vocal`: `["userId1", "userId2"]`
+    - `teclas`, `violao`, `batera`, `bass`, `guita`, `sound`: `"userId"` ou `""`
 - `POST /schedule/generate-monthly`
   - gera a escala mensal automática
   - `"admin"` ou `"leader"`
 - `POST /schedule/special-schedule`
   - salva escalas especiais
   - `"admin"` ou `"leader"`
+  - o frontend deve enviar os músicos por `"ID"` em cada campo
+  - resposta inclui o valor atual do usuário em `minister`, `vocal1`, `vocal2`, `teclas`, `violao`, `batera`, `bass`, `guita`, `sound`
+  - e inclui `ids` com os IDs gravados
 - `DELETE /schedule/special-schedule/:id`
   - apaga escala especial
   - `"admin"` ou `"leader"`
