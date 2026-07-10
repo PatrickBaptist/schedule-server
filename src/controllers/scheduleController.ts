@@ -25,6 +25,7 @@ interface ScheduleMusicos {
 
 interface ScheduleEntry {
   date: string;
+  outfitColor?: string;
   musicos: ScheduleMusicos;
   musicosIds: ScheduleMusicos;
 }
@@ -296,6 +297,16 @@ function cloneMusicos(value: ScheduleMusicos) {
   };
 }
 
+function resolveScheduleForResponse(entry: any, lookup?: UserLookup) {
+  const musicos = normalizeMusicos(getMusicosPayload(entry), lookup);
+
+  return {
+    date: typeof entry?.date === "string" ? entry.date : "",
+    outfitColor: typeof entry?.outfitColor === "string" ? entry.outfitColor : "",
+    ...resolveMusicosForResponse(musicos, lookup),
+  };
+}
+
 function normalizeVocalList(value: unknown, lookup?: UserLookup): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => resolveUserId(item, lookup)).filter(Boolean);
@@ -338,6 +349,28 @@ function mergeMusicosPayload(raw: any) {
 
 function getMusicosPayload(raw: any) {
   return raw?.músicos ?? raw?.musicos ?? raw?.["mÃºsicos"] ?? raw?.músicosIds ?? raw?.musicosIds ?? raw?.["mÃºsicosIds"] ?? {};
+}
+
+function getOutfitColorPayload(raw: any) {
+  if (typeof raw?.outfitColor === "string") {
+    return raw.outfitColor;
+  }
+
+  const nestedSources = [
+    raw?.["músicosIds"],
+    raw?.musicosIds,
+    raw?.["músicos"],
+    raw?.musicos,
+    raw?.ids,
+  ];
+
+  for (const source of nestedSources) {
+    if (typeof source?.outfitColor === "string") {
+      return source.outfitColor;
+    }
+  }
+
+  return "";
 }
 
 function extractHistoryFromDoc(data: any, lookup?: UserLookup) {
@@ -805,17 +838,7 @@ export const getMonthlySchedule = async (req: Request, res: Response): Promise<v
 
     res.json({
       ...data,
-      sundays: sundays.map((entry: any) => {
-        const musicos = normalizeMusicos(getMusicosPayload(entry), lookup);
-
-        return {
-          ...entry,
-          musicosIds: cloneMusicos(musicos),
-          musicos: resolveMusicosForResponse(musicos, lookup),
-          mÃºsicosIds: cloneMusicos(musicos),
-          mÃºsicos: resolveMusicosForResponse(musicos, lookup),
-        };
-      }),
+      sundays: sundays.map((entry: any) => resolveScheduleForResponse(entry, lookup)),
     });
   } catch (err) {
     console.error("Erro ao buscar escala:", err);
@@ -861,14 +884,9 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
       return;
     }
 
-    const musicos = normalizeMusicos(getMusicosPayload(matchingSchedule), lookup);
-
     res.json({
+      ...resolveScheduleForResponse(matchingSchedule, lookup),
       date: nextSundayISO,
-      musicos: resolveMusicosForResponse(musicos, lookup),
-      musicosIds: cloneMusicos(musicos),
-      mÃºsicos: resolveMusicosForResponse(musicos, lookup),
-      mÃºsicosIds: cloneMusicos(musicos),
     });
 
   } catch (err) {
@@ -882,9 +900,8 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
   const month = body.month;
   const year = body.year;
   const date = body.date;
-  const rawMusicos = mergeMusicosPayload(
-    body['músicosIds'] ?? body['musicosIds'] ?? body['músicos'] ?? body['musicos'] ?? {}
-  );
+  const rawMusicos = mergeMusicosPayload(body['músicosIds'] ?? body['musicosIds'] ?? body['músicos'] ?? body['musicos'] ?? {});
+  const outfitColor = getOutfitColorPayload(body);
 
   if (!month || !year || !date) {
     res.status(400).json({ message: 'Parâmetros obrigatórios ausentes.' });
@@ -906,14 +923,31 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
 
       const toDateOnly = (d: string) => new Date(d).toISOString().slice(0, 10);
       const existingIndex = sundays.findIndex((s: any) => toDateOnly(s.date) === toDateOnly(date));
+      const sundayEntry = {
+        date,
+        outfitColor,
+        musicos: normalizedMusicos,
+        musicosIds: {
+          ...cloneMusicos(normalizedMusicos),
+          outfitColor,
+        },
+      };
 
       if (existingIndex >= 0) {
-        sundays[existingIndex] = { date, musicos: normalizedMusicos, musicosIds: cloneMusicos(normalizedMusicos) };
+        sundays[existingIndex] = sundayEntry;
       } else {
-        sundays.push({ date, musicos: normalizedMusicos, musicosIds: cloneMusicos(normalizedMusicos) });
+        sundays.push(sundayEntry);
       }
     } else {
-      sundays.push({ date, musicos: normalizedMusicos, musicosIds: cloneMusicos(normalizedMusicos) });
+      sundays.push({
+        date,
+        outfitColor,
+        musicos: normalizedMusicos,
+        musicosIds: {
+          ...cloneMusicos(normalizedMusicos),
+          outfitColor,
+        },
+      });
     }
 
     await docRef.set({ sundays });
@@ -943,8 +977,25 @@ export const generateMonthlyAutoSchedule = async (req: Request, res: Response): 
     }
 
     const result = await generateMonthlySchedule(month, year);
+    const existingSnapshot = await db.collection("schedules").doc(result.monthId).get();
+    const existingSundays = existingSnapshot.exists ? (existingSnapshot.data()?.sundays ?? []) : [];
+    const outfitColorByDate = new Map<string, string>();
+
+    for (const entry of Array.isArray(existingSundays) ? existingSundays : []) {
+      if (typeof entry?.date === "string" && typeof entry?.outfitColor === "string") {
+        outfitColorByDate.set(entry.date.slice(0, 10), entry.outfitColor);
+      }
+    }
+
     await db.collection("schedules").doc(result.monthId).set({
-      sundays: result.sundays,
+      sundays: result.sundays.map((entry) => ({
+        ...entry,
+        musicosIds: {
+          ...entry.musicosIds,
+          outfitColor: typeof entry.outfitColor === "string" ? entry.outfitColor : ((entry.musicosIds as any)?.outfitColor ?? ""),
+        },
+        outfitColor: outfitColorByDate.get(entry.date) ?? entry.outfitColor ?? "",
+      })),
       generatedAt: new Date().toISOString(),
     });
 
