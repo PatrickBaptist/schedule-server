@@ -173,18 +173,18 @@ Regras importantes:
   - `"admin"` ou `"leader"`
   - o frontend deve enviar os músicos por `"ID"` em `músicosIds`
   - formato esperado:
-    - `minister`: `"userId"`
+    - `minister`: `["userId"]`
     - `vocal`: `["userId1", "userId2"]`
-    - `teclas`, `violao`, `batera`, `bass`, `guita`, `sound`: `"userId"` ou `""`
+    - `teclas`, `violao`, `batera`, `bass`, `guita`, `sound`: `["userId"]`
+  - os `GETs` devolvem todas as funções como arrays; registros antigos com valor único também são normalizados para array
 - `POST /schedule/generate-monthly`
   - gera a escala mensal automática
   - `"admin"` ou `"leader"`
 - `POST /schedule/special-schedule`
   - salva escalas especiais
   - `"admin"` ou `"leader"`
-  - o frontend deve enviar os músicos por `"ID"` em cada campo
-  - resposta inclui o valor atual do usuário em `minister`, `vocal1`, `vocal2`, `teclas`, `violao`, `batera`, `bass`, `guita`, `sound`
-  - e inclui `ids` com os IDs gravados
+  - o frontend deve enviar os músicos por `"ID"` em cada campo, sempre como array
+  - a resposta inclui todas as funções como arrays e `musicosIds`/`músicosIds` com os IDs gravados
 - `DELETE /schedule/special-schedule/:id`
   - apaga escala especial
   - `"admin"` ou `"leader"`
