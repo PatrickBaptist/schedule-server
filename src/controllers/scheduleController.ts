@@ -13,14 +13,14 @@ type ScheduleRole =
   | "sound";
 
 interface ScheduleMusicos {
-  minister: string;
+  minister: string[];
   vocal: string[];
-  teclas: string;
-  violao: string;
-  batera: string;
-  bass: string;
-  guita: string;
-  sound: string;
+  teclas: string[];
+  violao: string[];
+  batera: string[];
+  bass: string[];
+  guita: string[];
+  sound: string[];
 }
 
 interface ScheduleEntry {
@@ -196,34 +196,22 @@ function resolveUserDisplay(value: string, lookup?: UserLookup): ScheduleMusicoD
 }
 
 function resolveMusicosForResponse(musicos: ScheduleMusicos, lookup?: UserLookup) {
-  return {
-    minister: resolveUserDisplay(musicos.minister, lookup),
-    vocal: musicos.vocal.map((value) => resolveUserDisplay(value, lookup)).filter(Boolean) as ScheduleMusicoDisplay[],
-    teclas: resolveUserDisplay(musicos.teclas, lookup),
-    violao: resolveUserDisplay(musicos.violao, lookup),
-    batera: resolveUserDisplay(musicos.batera, lookup),
-    bass: resolveUserDisplay(musicos.bass, lookup),
-    guita: resolveUserDisplay(musicos.guita, lookup),
-    sound: resolveUserDisplay(musicos.sound, lookup),
-  };
+  return Object.fromEntries(
+    DEFAULT_ROLE_ORDER.map((role) => [
+      role,
+      musicos[role]
+        .map((value) => resolveUserDisplay(value, lookup))
+        .filter(Boolean) as ScheduleMusicoDisplay[],
+    ])
+  ) as Record<ScheduleRole, ScheduleMusicoDisplay[]>;
 }
 
 function normalizeSpecialSchedule(raw: any, lookup?: UserLookup): SpecialSchedule {
-  const vocalFromArray = normalizeVocalList(raw?.vocal ?? raw?.musicosIds?.vocal ?? raw?.ids?.vocal, lookup);
-
   return {
     evento: typeof raw?.evento === "string" ? raw.evento : "",
     data: typeof raw?.data === "string" ? raw.data : "",
     outfitColor: typeof raw?.outfitColor === "string" ? raw.outfitColor : undefined,
-    minister: resolveUserId(raw?.minister, lookup),
-    vocal1: vocalFromArray[0] ?? resolveUserId(raw?.vocal1, lookup),
-    vocal2: vocalFromArray[1] ?? resolveUserId(raw?.vocal2, lookup),
-    teclas: resolveUserId(raw?.teclas, lookup),
-    violao: resolveUserId(raw?.violao, lookup),
-    batera: resolveUserId(raw?.batera, lookup),
-    bass: resolveUserId(raw?.bass, lookup),
-    guita: resolveUserId(raw?.guita, lookup),
-    sound: resolveUserId(raw?.sound, lookup),
+    ...normalizeMusicos(raw, lookup),
   };
 }
 
@@ -237,23 +225,11 @@ function mergeSpecialSchedulePayload(raw: any) {
 }
 
 function resolveSpecialScheduleForResponse(raw: SpecialSchedule, lookup?: UserLookup): SpecialScheduleDisplay {
-  const vocal1 = resolveUserDisplay(raw.vocal1, lookup);
-  const vocal2 = resolveUserDisplay(raw.vocal2, lookup);
-
   return {
     evento: raw.evento,
     data: raw.data,
     outfitColor: raw.outfitColor,
-    minister: resolveUserDisplay(raw.minister, lookup),
-    vocal: [vocal1, vocal2],
-    vocal1,
-    vocal2,
-    teclas: resolveUserDisplay(raw.teclas, lookup),
-    violao: resolveUserDisplay(raw.violao, lookup),
-    batera: resolveUserDisplay(raw.batera, lookup),
-    bass: resolveUserDisplay(raw.bass, lookup),
-    guita: resolveUserDisplay(raw.guita, lookup),
-    sound: resolveUserDisplay(raw.sound, lookup),
+    ...resolveMusicosForResponse(raw, lookup),
   };
 }
 
@@ -279,35 +255,40 @@ function matchesRole(user: ActiveUser, role: ScheduleRole) {
 
 function buildEmptyMusicos(): ScheduleMusicos {
   return {
-    minister: "",
+    minister: [],
     vocal: [],
-    teclas: "",
-    violao: "",
-    batera: "",
-    bass: "",
-    guita: "",
-    sound: "",
+    teclas: [],
+    violao: [],
+    batera: [],
+    bass: [],
+    guita: [],
+    sound: [],
   };
 }
 
 function cloneMusicos(value: ScheduleMusicos) {
-  return {
-    ...value,
-    vocal: [...value.vocal],
-  };
+  return Object.fromEntries(
+    DEFAULT_ROLE_ORDER.map((role) => [role, [...value[role]]])
+  ) as unknown as ScheduleMusicos;
 }
 
 function resolveScheduleForResponse(entry: any, lookup?: UserLookup) {
   const musicos = normalizeMusicos(getMusicosPayload(entry), lookup);
+  const displays = resolveMusicosForResponse(musicos, lookup);
 
   return {
+    ...entry,
     date: typeof entry?.date === "string" ? entry.date : "",
     outfitColor: typeof entry?.outfitColor === "string" ? entry.outfitColor : "",
-    ...resolveMusicosForResponse(musicos, lookup),
+    ...displays,
+    musicos: displays,
+    musicosIds: cloneMusicos(musicos),
+    músicos: displays,
+    músicosIds: cloneMusicos(musicos),
   };
 }
 
-function normalizeVocalList(value: unknown, lookup?: UserLookup): string[] {
+function normalizeRoleList(value: unknown, lookup?: UserLookup): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => resolveUserId(item, lookup)).filter(Boolean);
   }
@@ -323,18 +304,18 @@ function normalizeVocalList(value: unknown, lookup?: UserLookup): string[] {
 }
 
 function normalizeMusicos(raw: any, lookup?: UserLookup): ScheduleMusicos {
-  const vocalFromArray = normalizeVocalList(raw?.vocal, lookup);
-  const vocalFromLegacy = normalizeVocalList([raw?.vocal1, raw?.vocal2].filter(Boolean), lookup);
+  const vocalFromArray = normalizeRoleList(raw?.vocal, lookup);
+  const vocalFromLegacy = normalizeRoleList([raw?.vocal1, raw?.vocal2].filter(Boolean), lookup);
 
   return {
-    minister: resolveUserId(raw?.minister, lookup),
+    minister: normalizeRoleList(raw?.minister, lookup),
     vocal: vocalFromArray.length > 0 ? vocalFromArray : vocalFromLegacy,
-    teclas: resolveUserId(raw?.teclas, lookup),
-    violao: resolveUserId(raw?.violao, lookup),
-    batera: resolveUserId(raw?.batera, lookup),
-    bass: resolveUserId(raw?.bass, lookup),
-    guita: resolveUserId(raw?.guita, lookup),
-    sound: resolveUserId(raw?.sound, lookup),
+    teclas: normalizeRoleList(raw?.teclas, lookup),
+    violao: normalizeRoleList(raw?.violao, lookup),
+    batera: normalizeRoleList(raw?.batera, lookup),
+    bass: normalizeRoleList(raw?.bass, lookup),
+    guita: normalizeRoleList(raw?.guita, lookup),
+    sound: normalizeRoleList(raw?.sound, lookup),
   };
 }
 
@@ -404,37 +385,17 @@ function buildHistoryMaps(entries: Array<{ date: string; mÃºsicos: any }>) {
     const used = new Set<string>();
     const musicians = normalizeMusicos(entry.mÃºsicos ?? {});
 
-    const singleRoles: Exclude<ScheduleRole, "vocal">[] = [
-      "minister",
-      "teclas",
-      "violao",
-      "batera",
-      "bass",
-      "guita",
-      "sound",
-    ];
+    for (const role of DEFAULT_ROLE_ORDER) {
+      for (const name of musicians[role]) {
+        const normalizedName = name.trim();
+        if (!normalizedName) {
+          continue;
+        }
 
-    for (const role of singleRoles) {
-      const rawName = musicians[role];
-      if (typeof rawName !== "string" || rawName.trim() === "") {
-        continue;
+        roleCounts[role].set(normalizedName, (roleCounts[role].get(normalizedName) ?? 0) + 1);
+        totalCounts.set(normalizedName, (totalCounts.get(normalizedName) ?? 0) + 1);
+        used.add(normalizedName);
       }
-
-      const name = rawName.trim();
-      roleCounts[role].set(name, (roleCounts[role].get(name) ?? 0) + 1);
-      totalCounts.set(name, (totalCounts.get(name) ?? 0) + 1);
-      used.add(name);
-    }
-
-    for (const name of musicians.vocal) {
-      const normalizedName = name.trim();
-      if (!normalizedName) {
-        continue;
-      }
-
-      roleCounts.vocal.set(normalizedName, (roleCounts.vocal.get(normalizedName) ?? 0) + 1);
-      totalCounts.set(normalizedName, (totalCounts.get(normalizedName) ?? 0) + 1);
-      used.add(normalizedName);
     }
 
     byDate.set(dateKey, used);
@@ -469,21 +430,12 @@ function collectBlockedNamesByRole(schedule: ScheduleMusicos | null) {
     return blockedByRole;
   }
 
-  if (schedule.minister.trim()) {
-    blockedByRole.minister.add(schedule.minister.trim());
-  }
-
-  for (const name of schedule.vocal) {
-    const trimmed = name.trim();
-    if (trimmed) {
-      blockedByRole.vocal.add(trimmed);
-    }
-  }
-
-  for (const role of ["teclas", "violao", "batera", "bass", "guita", "sound"] as const) {
-    const value = schedule[role];
-    if (value.trim()) {
-      blockedByRole[role].add(value.trim());
+  for (const role of DEFAULT_ROLE_ORDER) {
+    for (const value of schedule[role]) {
+      const trimmed = value.trim();
+      if (trimmed) {
+        blockedByRole[role].add(trimmed);
+      }
     }
   }
 
@@ -561,28 +513,15 @@ function fillSundaySchedule(
   }
 
   function cloneAssignment(source: ScheduleMusicos) {
-    return {
-      ...source,
-      vocal: [...source.vocal],
-    };
+    return cloneMusicos(source);
   }
 
   function addRoleToAssignment(target: ScheduleMusicos, role: ScheduleRole, label: string) {
-    if (role === "vocal") {
-      target.vocal.push(label);
-      return;
-    }
-
-    target[role] = label;
+    target[role].push(label);
   }
 
   function removeRoleFromAssignment(target: ScheduleMusicos, role: ScheduleRole) {
-    if (role === "vocal") {
-      target.vocal.pop();
-      return;
-    }
-
-    target[role] = "";
+    target[role].pop();
   }
 
   function buildRemainingSlots(remainingSlots: ScheduleRole[], chosenIndex: number) {
@@ -609,10 +548,7 @@ function fillSundaySchedule(
     const nextRemaining = roleIndex >= 0 ? buildRemainingSlots(remainingSlots, roleIndex) : remainingSlots.slice(1);
 
     if (candidates.length === 0) {
-      addRoleToAssignment(currentAssignment, role, "");
-      const result = backtrack(nextRemaining, usedThisSunday, currentAssignment);
-      removeRoleFromAssignment(currentAssignment, role);
-      return result;
+      return backtrack(nextRemaining, usedThisSunday, currentAssignment);
     }
 
     let bestResult: { assignment: ScheduleMusicos; score: number } | null = null;
@@ -723,21 +659,10 @@ async function generateMonthlySchedule(month: number, year: number): Promise<Gen
     });
 
     for (const role of DEFAULT_ROLE_ORDER) {
-      if (role === "vocal") {
-        for (const label of musicos.vocal) {
-          roleCounts.vocal.set(label, (roleCounts.vocal.get(label) ?? 0) + 1);
+      for (const label of musicos[role]) {
+          roleCounts[role].set(label, (roleCounts[role].get(label) ?? 0) + 1);
           totalCounts.set(label, (totalCounts.get(label) ?? 0) + 1);
-        }
-        continue;
       }
-
-      const label = musicos[role];
-      if (!label) {
-        continue;
-      }
-
-      roleCounts[role].set(label, (roleCounts[role].get(label) ?? 0) + 1);
-      totalCounts.set(label, (totalCounts.get(label) ?? 0) + 1);
     }
 
     previousSundayAssignments = musicos;
@@ -784,35 +709,16 @@ async function loadActiveUsersAndLookup() {
   };
 }
 
-interface SpecialSchedule {
+interface SpecialSchedule extends ScheduleMusicos {
   evento: string;
   data: string;
   outfitColor?: string;
-  vocal1: string;
-  vocal2: string;
-  teclas: string;
-  violao: string;
-  batera: string;
-  bass: string;
-  guita: string;
-  sound: string;
-  minister: string;
 }
 
-interface SpecialScheduleDisplay {
+interface SpecialScheduleDisplay extends Record<ScheduleRole, ScheduleMusicoDisplay[]> {
   evento: string;
   data: string;
   outfitColor?: string;
-  minister: ScheduleMusicoDisplay | null;
-  vocal: Array<ScheduleMusicoDisplay | null>;
-  vocal1: ScheduleMusicoDisplay | null;
-  vocal2: ScheduleMusicoDisplay | null;
-  teclas: ScheduleMusicoDisplay | null;
-  violao: ScheduleMusicoDisplay | null;
-  batera: ScheduleMusicoDisplay | null;
-  bass: ScheduleMusicoDisplay | null;
-  guita: ScheduleMusicoDisplay | null;
-  sound: ScheduleMusicoDisplay | null;
 }
 
 export const getMonthlySchedule = async (req: Request, res: Response): Promise<void> => {
@@ -1019,10 +925,17 @@ export const getSpecialSchedules = async (req: Request, res: Response): Promise<
     const snapshot = await db.collection("specialSchedules").get();
     const schedules = snapshot.docs.map((doc) => {
       const data = normalizeSpecialSchedule(doc.data(), lookup);
+      const displays = resolveSpecialScheduleForResponse(data, lookup);
+      const ids = cloneMusicos(data);
+      const musicos = resolveMusicosForResponse(data, lookup);
       return {
         id: doc.id,
-        ...resolveSpecialScheduleForResponse(data, lookup),
+        ...displays,
         ids: data,
+        musicos,
+        musicosIds: ids,
+        músicos: musicos,
+        músicosIds: ids,
       };
     });
     res.status(200).json(schedules);
