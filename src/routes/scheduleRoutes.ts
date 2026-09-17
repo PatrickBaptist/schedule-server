@@ -3,12 +3,14 @@ import { Router } from 'express';
 import { authorizeRoles } from '../middlewares/authorizatizeAdmin';
 import { UserRole } from '../enums/UserRoles';
 import { authenticateToken } from '../middlewares/authorizatizeToken';
-import { deleteSpecialSchedules, generateMonthlyAutoSchedule, getMonthlySchedule, getNextSundaySchedule, getSpecialSchedules, postSpecialSchedules, upsertSchedule } from '../controllers/scheduleController';
+import { deleteSpecialSchedules, generateMonthlyAutoSchedule, generateSpecialSchedules, getMonthlySchedule, getNextSundaySchedule, getSpecialSchedules, migrateLegacySchedules, postSpecialSchedules, upsertSchedule } from '../controllers/scheduleController';
 
 const router = Router();
 
 router.get("/next-sunday", getNextSundaySchedule);
 router.get("/special-schedule", getSpecialSchedules);
+router.post("/special-schedule/generate", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), generateSpecialSchedules);
+router.post("/special-schedule/migrate-legacy", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), migrateLegacySchedules);
 router.post("/generate-monthly", authenticateToken, authorizeRoles(UserRole.Admin, UserRole.Leader), generateMonthlyAutoSchedule);
 router.get("/:month", getMonthlySchedule);
 

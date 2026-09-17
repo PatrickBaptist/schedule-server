@@ -1,34 +1,28 @@
 ﻿import { Request, Response } from "express";
 import { db } from "../repositories/firebaseService";
 import { UserStatus } from "../enums/UserStatus";
+import {
+  buildSavedSundays,
+  cloneMusicosIds,
+  compareScheduleEvents,
+  createEmptyMusicosIds,
+  EventMusicosIds,
+  GenerateScheduleOptions,
+  GenerateSelectedScheduleRequest,
+  getSundayDateKeys,
+  MusicosIds,
+  ScheduleEntry,
+  ScheduleEvent,
+  ScheduleMode,
+  ScheduleRole,
+  SCHEDULE_ROLES,
+  normalizeGenerateSelection,
+  normalizeStartTime,
+  validateScheduleDate,
+  validateSelectedDates,
+} from "../services/scheduleGeneration";
 
-type ScheduleRole =
-  | "minister"
-  | "vocal"
-  | "teclas"
-  | "violao"
-  | "batera"
-  | "bass"
-  | "guita"
-  | "sound";
-
-interface ScheduleMusicos {
-  minister: string[];
-  vocal: string[];
-  teclas: string[];
-  violao: string[];
-  batera: string[];
-  bass: string[];
-  guita: string[];
-  sound: string[];
-}
-
-interface ScheduleEntry {
-  date: string;
-  outfitColor?: string;
-  musicos: ScheduleMusicos;
-  musicosIds: ScheduleMusicos;
-}
+type ScheduleMusicos = MusicosIds;
 
 interface GeneratedScheduleResult {
   monthId: string;
@@ -58,16 +52,20 @@ interface ScheduleMusicoDisplay {
   nickname: string | null;
 }
 
-const DEFAULT_ROLE_ORDER: ScheduleRole[] = [
-  "minister",
-  "vocal",
-  "teclas",
-  "violao",
-  "batera",
-  "bass",
-  "guita",
-  "sound",
-];
+interface HistoryEntry {
+  date: string;
+  musicos: MusicosIds;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+const DEFAULT_ROLE_ORDER = SCHEDULE_ROLES;
 
 const ROLE_ALIASES: Record<ScheduleRole, string[]> = {
   minister: ["minister", "ministro"],
@@ -97,27 +95,25 @@ function toDateKey(date: Date) {
 }
 
 function parseDateKey(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.slice(0, 10));
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  const isValid =
+    date.getFullYear() === year &&
+    date.getMonth() + 1 === month &&
+    date.getDate() === day;
+
+  return isValid ? date : null;
 }
 
 function buildMonthId(month: number, year: number) {
   return `${pad(month)}-${year}`;
-}
-
-function getSundayDates(month: number, year: number) {
-  const sundays: Date[] = [];
-  const current = new Date(year, month - 1, 1);
-  const lastDay = new Date(year, month, 0).getDate();
-
-  for (let day = 1; day <= lastDay; day += 1) {
-    const date = new Date(year, month - 1, day);
-    if (date.getDay() === 0) {
-      sundays.push(date);
-    }
-  }
-
-  return sundays;
 }
 
 function getUserLabel(user: ActiveUser) {
@@ -206,30 +202,80 @@ function resolveMusicosForResponse(musicos: ScheduleMusicos, lookup?: UserLookup
   ) as Record<ScheduleRole, ScheduleMusicoDisplay[]>;
 }
 
-function normalizeSpecialSchedule(raw: any, lookup?: UserLookup): SpecialSchedule {
+function toEventMusicosIds(musicos: MusicosIds, outfitColor?: string): EventMusicosIds {
   return {
-    evento: typeof raw?.evento === "string" ? raw.evento : "",
-    data: typeof raw?.data === "string" ? raw.data : "",
-    outfitColor: typeof raw?.outfitColor === "string" ? raw.outfitColor : undefined,
-    ...normalizeMusicos(raw, lookup),
+    ...cloneMusicos(musicos),
+    ...(typeof outfitColor === "string" ? { outfitColor } : {}),
   };
 }
 
-function mergeSpecialSchedulePayload(raw: any) {
-  const ids = raw?.músicosIds ?? raw?.musicosIds ?? raw?.ids ?? {};
+function normalizeSpecialSchedule(raw: unknown, id?: string, lookup?: UserLookup): ScheduleEvent {
+  const record = asRecord(raw);
+  const outfitColor = getOutfitColorPayload(record);
+  const musicos = normalizeMusicos(getMusicosPayload(record), lookup);
+  const startTime = typeof record.startTime === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(record.startTime)
+    ? record.startTime
+    : null;
 
   return {
-    ...raw,
-    ...ids,
+    ...(id ? { id } : {}),
+    evento: typeof record.evento === "string" ? record.evento : "",
+    data: typeof record.data === "string" ? record.data : "",
+    startTime,
+    ...(outfitColor ? { outfitColor } : {}),
+    musicosIds: toEventMusicosIds(musicos, outfitColor || undefined),
+    ...(typeof record.createdAt === "string" ? { createdAt: record.createdAt } : {}),
+    ...(typeof record.updatedAt === "string" ? { updatedAt: record.updatedAt } : {}),
+    ...(typeof record.legacySourceId === "string" ? { legacySourceId: record.legacySourceId } : {}),
   };
 }
 
-function resolveSpecialScheduleForResponse(raw: SpecialSchedule, lookup?: UserLookup): SpecialScheduleDisplay {
+function parseSpecialScheduleInput(raw: unknown, index: number): ScheduleEvent {
+  const record = asRecord(raw);
+  let data: string;
+  let startTime: string | null;
+  try {
+    data = validateScheduleDate(record.data);
+    startTime = normalizeStartTime(record.startTime);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`A escala ${index + 1} e invalida: ${reason}`);
+  }
+
+  if (record.evento !== undefined && typeof record.evento !== "string") {
+    throw new Error(`A escala ${index + 1} possui evento invalido.`);
+  }
+
+  if (record.id !== undefined && (typeof record.id !== "string" || !record.id.trim())) {
+    throw new Error(`A escala ${index + 1} possui id invalido.`);
+  }
+
+  if (record.outfitColor !== undefined && typeof record.outfitColor !== "string") {
+    throw new Error(`A escala ${index + 1} possui outfitColor invalido.`);
+  }
+
+  const idsPayload = record["músicosIds"] ?? record.musicosIds;
+  if (idsPayload === undefined || !isRecord(idsPayload)) {
+    throw new Error(`A escala ${index + 1} deve informar musicosIds.`);
+  }
+
+  const nestedColor = asRecord(idsPayload).outfitColor;
+  if (nestedColor !== undefined && typeof nestedColor !== "string") {
+    throw new Error(`A escala ${index + 1} possui outfitColor invalido em musicosIds.`);
+  }
+
+  const outfitColor = typeof record.outfitColor === "string"
+    ? record.outfitColor
+    : typeof nestedColor === "string" ? nestedColor : undefined;
+  const musicos = normalizeMusicos(idsPayload);
+
   return {
-    evento: raw.evento,
-    data: raw.data,
-    outfitColor: raw.outfitColor,
-    ...resolveMusicosForResponse(raw, lookup),
+    ...(typeof record.id === "string" ? { id: record.id.trim() } : {}),
+    evento: typeof record.evento === "string" ? record.evento : "",
+    data,
+    startTime,
+    ...(outfitColor !== undefined ? { outfitColor } : {}),
+    musicosIds: toEventMusicosIds(musicos, outfitColor),
   };
 }
 
@@ -254,32 +300,22 @@ function matchesRole(user: ActiveUser, role: ScheduleRole) {
 }
 
 function buildEmptyMusicos(): ScheduleMusicos {
-  return {
-    minister: [],
-    vocal: [],
-    teclas: [],
-    violao: [],
-    batera: [],
-    bass: [],
-    guita: [],
-    sound: [],
-  };
+  return createEmptyMusicosIds();
 }
 
 function cloneMusicos(value: ScheduleMusicos) {
-  return Object.fromEntries(
-    DEFAULT_ROLE_ORDER.map((role) => [role, [...value[role]]])
-  ) as unknown as ScheduleMusicos;
+  return cloneMusicosIds(value);
 }
 
-function resolveScheduleForResponse(entry: any, lookup?: UserLookup) {
-  const musicos = normalizeMusicos(getMusicosPayload(entry), lookup);
+function resolveScheduleForResponse(entry: unknown, lookup?: UserLookup) {
+  const record = asRecord(entry);
+  const musicos = normalizeMusicos(getMusicosPayload(record), lookup);
   const displays = resolveMusicosForResponse(musicos, lookup);
 
   return {
-    ...entry,
-    date: typeof entry?.date === "string" ? entry.date : "",
-    outfitColor: typeof entry?.outfitColor === "string" ? entry.outfitColor : "",
+    ...record,
+    date: typeof record.date === "string" ? record.date : "",
+    outfitColor: typeof record.outfitColor === "string" ? record.outfitColor : "",
     ...displays,
     musicos: displays,
     musicosIds: cloneMusicos(musicos),
@@ -303,69 +339,100 @@ function normalizeRoleList(value: unknown, lookup?: UserLookup): string[] {
   return [];
 }
 
-function normalizeMusicos(raw: any, lookup?: UserLookup): ScheduleMusicos {
-  const vocalFromArray = normalizeRoleList(raw?.vocal, lookup);
-  const vocalFromLegacy = normalizeRoleList([raw?.vocal1, raw?.vocal2].filter(Boolean), lookup);
+function normalizeMusicos(raw: unknown, lookup?: UserLookup): ScheduleMusicos {
+  const record = asRecord(raw);
+  const vocalFromArray = normalizeRoleList(record.vocal, lookup);
+  const vocalFromLegacy = normalizeRoleList([record.vocal1, record.vocal2].filter(Boolean), lookup);
 
   return {
-    minister: normalizeRoleList(raw?.minister, lookup),
+    minister: normalizeRoleList(record.minister, lookup),
     vocal: vocalFromArray.length > 0 ? vocalFromArray : vocalFromLegacy,
-    teclas: normalizeRoleList(raw?.teclas, lookup),
-    violao: normalizeRoleList(raw?.violao, lookup),
-    batera: normalizeRoleList(raw?.batera, lookup),
-    bass: normalizeRoleList(raw?.bass, lookup),
-    guita: normalizeRoleList(raw?.guita, lookup),
-    sound: normalizeRoleList(raw?.sound, lookup),
+    teclas: normalizeRoleList(record.teclas, lookup),
+    violao: normalizeRoleList(record.violao, lookup),
+    batera: normalizeRoleList(record.batera, lookup),
+    bass: normalizeRoleList(record.bass, lookup),
+    guita: normalizeRoleList(record.guita, lookup),
+    sound: normalizeRoleList(record.sound, lookup),
   };
 }
 
-function mergeMusicosPayload(raw: any) {
-  const ids = raw?.músicosIds ?? raw?.musicosIds ?? raw?.["mÃºsicosIds"] ?? raw?.ids ?? {};
+function mergeMusicosPayload(raw: unknown) {
+  const record = asRecord(raw);
+  const ids = asRecord(record["músicosIds"] ?? record.musicosIds ?? record["mÃºsicosIds"] ?? record.ids);
 
   return {
-    ...raw,
+    ...record,
     ...ids,
   };
 }
 
-function getMusicosPayload(raw: any) {
-  return raw?.músicos ?? raw?.musicos ?? raw?.["mÃºsicos"] ?? raw?.músicosIds ?? raw?.musicosIds ?? raw?.["mÃºsicosIds"] ?? {};
+function getMusicosPayload(raw: unknown) {
+  const record = asRecord(raw);
+  return record["músicos"] ?? record.musicos ?? record["mÃºsicos"] ?? record["músicosIds"] ?? record.musicosIds ?? record["mÃºsicosIds"] ?? record;
 }
 
-function getOutfitColorPayload(raw: any) {
-  if (typeof raw?.outfitColor === "string") {
-    return raw.outfitColor;
+function getOutfitColorPayload(raw: unknown) {
+  const record = asRecord(raw);
+  if (typeof record.outfitColor === "string") {
+    return record.outfitColor;
   }
 
   const nestedSources = [
-    raw?.["músicosIds"],
-    raw?.musicosIds,
-    raw?.["músicos"],
-    raw?.musicos,
-    raw?.ids,
+    record["músicosIds"],
+    record.musicosIds,
+    record["músicos"],
+    record.musicos,
+    record.ids,
   ];
 
   for (const source of nestedSources) {
-    if (typeof source?.outfitColor === "string") {
-      return source.outfitColor;
+    const nested = asRecord(source);
+    if (typeof nested.outfitColor === "string") {
+      return nested.outfitColor;
     }
   }
 
   return "";
 }
 
-function extractHistoryFromDoc(data: any, lookup?: UserLookup) {
-  const sundays = Array.isArray(data?.sundays) ? data.sundays : [];
+function normalizeStoredScheduleEntry(raw: unknown, lookup?: UserLookup): ScheduleEntry | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
 
-  return sundays
-    .map((entry: any) => ({
-      date: typeof entry?.date === "string" ? entry.date : null,
-      mÃºsicos: normalizeMusicos(getMusicosPayload(entry), lookup),
-    }))
-    .filter((entry: { date: string | null; mÃºsicos: any }) => Boolean(entry.date));
+  const record = raw as Record<string, unknown>;
+  if (typeof record.date !== "string") {
+    return null;
+  }
+
+  const musicos = normalizeMusicos(getMusicosPayload(record), lookup);
+  const outfitColor = getOutfitColorPayload(record);
+
+  return {
+    ...record,
+    date: record.date.slice(0, 10),
+    outfitColor,
+    musicos: cloneMusicos(musicos),
+    musicosIds: cloneMusicos(musicos),
+  };
 }
 
-function buildHistoryMaps(entries: Array<{ date: string; mÃºsicos: any }>) {
+function extractHistoryFromDoc(data: unknown, lookup?: UserLookup): HistoryEntry[] {
+  const record = asRecord(data);
+  const sundays: unknown[] = Array.isArray(record.sundays) ? record.sundays : [];
+
+  return sundays
+    .map((entry): HistoryEntry | null => {
+      const schedule = asRecord(entry);
+      return typeof schedule.date === "string" ? {
+        date: schedule.date.slice(0, 10),
+        musicos: normalizeMusicos(getMusicosPayload(schedule), lookup),
+      } : null;
+    })
+    .filter((entry): entry is HistoryEntry => entry !== null);
+}
+
+function buildHistoryMaps(entries: HistoryEntry[]) {
   const roleCounts: Record<ScheduleRole, Map<string, number>> = {
     minister: new Map(),
     vocal: new Map(),
@@ -378,12 +445,9 @@ function buildHistoryMaps(entries: Array<{ date: string; mÃºsicos: any }>) {
   };
 
   const totalCounts = new Map<string, number>();
-  const byDate = new Map<string, Set<string>>();
-
   for (const entry of entries) {
-    const dateKey = toDateKey(parseDateKey(entry.date) ?? new Date(entry.date));
     const used = new Set<string>();
-    const musicians = normalizeMusicos(entry.mÃºsicos ?? {});
+    const musicians = entry.musicos;
 
     for (const role of DEFAULT_ROLE_ORDER) {
       for (const name of musicians[role]) {
@@ -393,25 +457,26 @@ function buildHistoryMaps(entries: Array<{ date: string; mÃºsicos: any }>) {
         }
 
         roleCounts[role].set(normalizedName, (roleCounts[role].get(normalizedName) ?? 0) + 1);
-        totalCounts.set(normalizedName, (totalCounts.get(normalizedName) ?? 0) + 1);
         used.add(normalizedName);
       }
     }
 
-    byDate.set(dateKey, used);
+    for (const name of used) {
+      totalCounts.set(name, (totalCounts.get(name) ?? 0) + 1);
+    }
   }
 
-  return { roleCounts, totalCounts, byDate };
+  return { roleCounts, totalCounts };
 }
 
-function getLastSundayAssignments(history: Array<{ date: string; mÃºsicos: any }>, targetDate: Date, lookup?: UserLookup) {
+function getLastSundayAssignments(history: HistoryEntry[], targetDate: Date, lookup?: UserLookup) {
   const previousDate = new Date(targetDate);
   previousDate.setDate(targetDate.getDate() - 7);
   const previousDateKey = toDateKey(previousDate);
 
   const match = history.find((entry) => toDateKey(parseDateKey(entry.date) ?? new Date(entry.date)) === previousDateKey);
 
-  return match?.mÃºsicos ? normalizeMusicos(match.mÃºsicos, lookup) : null;
+  return match?.musicos ? normalizeMusicos(match.musicos, lookup) : null;
 }
 
 function collectBlockedNamesByRole(schedule: ScheduleMusicos | null) {
@@ -446,8 +511,12 @@ function fillSundaySchedule(
   users: ActiveUser[],
   roleCounts: Record<ScheduleRole, Map<string, number>>,
   totalCounts: Map<string, number>,
-  blockedByRole: Record<ScheduleRole, Set<string>>
+  blockedByRole: Record<ScheduleRole, Set<string>>,
+  initialAssignment: ScheduleMusicos = buildEmptyMusicos(),
+  initialSlots: ScheduleRole[] = ["minister", "vocal", "vocal", "teclas", "violao", "batera", "bass", "guita", "sound"],
+  allowPartial = false
 ) {
+  let missingRole: ScheduleRole | null = null;
   type Candidate = {
     user: ActiveUser;
     id: string;
@@ -532,15 +601,15 @@ function fillSundaySchedule(
     remainingSlots: ScheduleRole[],
     usedThisSunday: Set<string>,
     currentAssignment: ScheduleMusicos
-  ): { assignment: ScheduleMusicos; score: number } | null {
+  ): { assignment: ScheduleMusicos; score: number; filledSlots: number } | null {
     if (remainingSlots.length === 0) {
-      return { assignment: cloneAssignment(currentAssignment), score: 0 };
+      return { assignment: cloneAssignment(currentAssignment), score: 0, filledSlots: 0 };
     }
 
     const next = getNextRole(remainingSlots, usedThisSunday);
 
     if (!next) {
-      return { assignment: cloneAssignment(currentAssignment), score: 0 };
+      return { assignment: cloneAssignment(currentAssignment), score: 0, filledSlots: 0 };
     }
 
     const { role, candidates } = next;
@@ -548,10 +617,13 @@ function fillSundaySchedule(
     const nextRemaining = roleIndex >= 0 ? buildRemainingSlots(remainingSlots, roleIndex) : remainingSlots.slice(1);
 
     if (candidates.length === 0) {
-      return backtrack(nextRemaining, usedThisSunday, currentAssignment);
+      missingRole = role;
+      return allowPartial
+        ? backtrack(nextRemaining, usedThisSunday, currentAssignment)
+        : null;
     }
 
-    let bestResult: { assignment: ScheduleMusicos; score: number } | null = null;
+    let bestResult: { assignment: ScheduleMusicos; score: number; filledSlots: number } | null = null;
 
     for (const candidate of candidates) {
       addRoleToAssignment(currentAssignment, role, candidate.id);
@@ -567,10 +639,16 @@ function fillSundaySchedule(
       }
 
       const branchScore = scoreCandidate(candidate, role) + nextResult.score;
-      if (!bestResult || branchScore < bestResult.score) {
+      const branchFilledSlots = nextResult.filledSlots + 1;
+      if (
+        !bestResult ||
+        branchFilledSlots > bestResult.filledSlots ||
+        (branchFilledSlots === bestResult.filledSlots && branchScore < bestResult.score)
+      ) {
         bestResult = {
           assignment: nextResult.assignment,
           score: branchScore,
+          filledSlots: branchFilledSlots,
         };
       }
     }
@@ -578,16 +656,22 @@ function fillSundaySchedule(
     return bestResult;
   }
 
-  const initialSlots: ScheduleRole[] = ["minister", "vocal", "vocal", "teclas", "violao", "batera", "bass", "guita", "sound"];
-  const result = backtrack(initialSlots, new Set<string>(), buildEmptyMusicos());
+  const usedInitially = new Set(
+    DEFAULT_ROLE_ORDER.flatMap((role) => initialAssignment[role])
+  );
+  const result = backtrack(initialSlots, usedInitially, cloneMusicos(initialAssignment));
 
   return {
-    assignment: result?.assignment ?? buildEmptyMusicos(),
-    missingRole: null as ScheduleRole | null,
+    assignment: result?.assignment ?? null,
+    missingRole,
   };
 }
 
-async function generateMonthlySchedule(month: number, year: number): Promise<GeneratedScheduleResult> {
+async function generateMonthlySchedule(
+  month: number,
+  year: number,
+  options: GenerateScheduleOptions
+): Promise<GeneratedScheduleResult> {
   const monthId = buildMonthId(month, year);
   const targetMonthStart = new Date(year, month - 1, 1);
   const targetMonthStartKey = toDateKey(targetMonthStart);
@@ -636,16 +720,51 @@ async function generateMonthlySchedule(month: number, year: number): Promise<Gen
     return toDateKey(entryDate) < targetMonthStartKey;
   });
 
-  const { roleCounts, totalCounts } = buildHistoryMaps(historicalEntries);
-  const sundays = getSundayDates(month, year);
+  const lockedHistory = options.lockedSchedules.map((entry) => ({
+    date: entry.date.slice(0, 10),
+    musicos: cloneMusicos(entry.musicosIds),
+  }));
+  const selectedByDate = new Map(
+    (options.selectedSchedules ?? []).map((entry) => [entry.date.slice(0, 10), entry])
+  );
+  const manuallySelectedHistory = options.mode === "fill-empty"
+    ? [...selectedByDate.values()].map((entry) => ({
+        date: entry.date.slice(0, 10),
+        musicos: cloneMusicos(entry.musicosIds),
+      }))
+    : [];
+  const countingHistory = [...historicalEntries, ...lockedHistory, ...manuallySelectedHistory];
+  const { roleCounts, totalCounts } = buildHistoryMaps(countingHistory);
+  const selectedDates = [...options.selectedDates].sort();
   const generated: ScheduleEntry[] = [];
+  const timeline = [...historicalEntries, ...lockedHistory];
 
-  let previousSundayAssignments = getLastSundayAssignments(historicalEntries, targetMonthStart, lookup);
+  for (const selectedDate of selectedDates) {
+    const sunday = parseDateKey(selectedDate);
+    if (!sunday) {
+      throw new Error(`Data invalida: ${selectedDate}.`);
+    }
 
-  for (const sunday of sundays) {
+    const previousSundayAssignments = getLastSundayAssignments(timeline, sunday, lookup);
     const blockedByRole = collectBlockedNamesByRole(previousSundayAssignments);
-
-    const sundayResult = fillSundaySchedule(users, roleCounts, totalCounts, blockedByRole);
+    const existing = selectedByDate.get(selectedDate);
+    const initialAssignment = options.mode === "fill-empty" && existing
+      ? cloneMusicos(existing.musicosIds)
+      : buildEmptyMusicos();
+    const emptyRoles = DEFAULT_ROLE_ORDER.flatMap((role) => {
+      if (initialAssignment[role].length > 0) {
+        return [];
+      }
+      return role === "vocal" ? [role, role] : [role];
+    });
+    const sundayResult = fillSundaySchedule(
+      users,
+      roleCounts,
+      totalCounts,
+      blockedByRole,
+      initialAssignment,
+      emptyRoles
+    );
 
     if (!sundayResult.assignment) {
       throw new Error(`Nao foi possivel montar a escala para ${toDateKey(sunday)}. Falta pessoa para a funcao "${sundayResult.missingRole}".`);
@@ -653,19 +772,20 @@ async function generateMonthlySchedule(month: number, year: number): Promise<Gen
 
     const musicos = cloneMusicos(sundayResult.assignment);
     generated.push({
-      date: toDateKey(sunday),
+      date: selectedDate,
       musicos,
       musicosIds: cloneMusicos(musicos),
     });
 
     for (const role of DEFAULT_ROLE_ORDER) {
-      for (const label of musicos[role]) {
+      const generatedForRole = initialAssignment[role].length === 0 ? musicos[role] : [];
+      for (const label of generatedForRole) {
           roleCounts[role].set(label, (roleCounts[role].get(label) ?? 0) + 1);
           totalCounts.set(label, (totalCounts.get(label) ?? 0) + 1);
       }
     }
 
-    previousSundayAssignments = musicos;
+    timeline.push({ date: selectedDate, musicos: cloneMusicos(musicos) });
   }
 
   return {
@@ -709,18 +829,6 @@ async function loadActiveUsersAndLookup() {
   };
 }
 
-interface SpecialSchedule extends ScheduleMusicos {
-  evento: string;
-  data: string;
-  outfitColor?: string;
-}
-
-interface SpecialScheduleDisplay extends Record<ScheduleRole, ScheduleMusicoDisplay[]> {
-  evento: string;
-  data: string;
-  outfitColor?: string;
-}
-
 export const getMonthlySchedule = async (req: Request, res: Response): Promise<void> => {
   try {
     const { month } = req.params;
@@ -744,7 +852,7 @@ export const getMonthlySchedule = async (req: Request, res: Response): Promise<v
 
     res.json({
       ...data,
-      sundays: sundays.map((entry: any) => resolveScheduleForResponse(entry, lookup)),
+      sundays: sundays.map((entry: unknown) => resolveScheduleForResponse(entry, lookup)),
     });
   } catch (err) {
     console.error("Erro ao buscar escala:", err);
@@ -780,8 +888,12 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
 
     const nextSundayISO = nextSunday.toISOString().split('T')[0];
 
-    const matchingSchedule = sundays.find((s: any) => {
-      const sundayDate = new Date(s.date).toISOString().split('T')[0];
+    const matchingSchedule = sundays.find((value: unknown) => {
+      const schedule = asRecord(value);
+      if (typeof schedule.date !== "string") {
+        return false;
+      }
+      const sundayDate = new Date(schedule.date).toISOString().split('T')[0];
       return sundayDate === nextSundayISO;
     });
 
@@ -828,7 +940,10 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
       sundays = data?.sundays || [];
 
       const toDateOnly = (d: string) => new Date(d).toISOString().slice(0, 10);
-      const existingIndex = sundays.findIndex((s: any) => toDateOnly(s.date) === toDateOnly(date));
+      const existingIndex = sundays.findIndex((value: unknown) => {
+        const schedule = asRecord(value);
+        return typeof schedule.date === "string" && toDateOnly(schedule.date) === toDateOnly(date);
+      });
       const sundayEntry = {
         date,
         outfitColor,
@@ -866,8 +981,9 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
 
 export const generateMonthlyAutoSchedule = async (req: Request, res: Response): Promise<void> => {
   try {
-    const rawMonth = req.body?.month ?? req.query?.month ?? new Date().getMonth() + 1;
-    const rawYear = req.body?.year ?? req.query?.year ?? new Date().getFullYear();
+    const request = (req.body ?? {}) as Partial<GenerateSelectedScheduleRequest>;
+    const rawMonth = request.month ?? req.query?.month ?? new Date().getMonth() + 1;
+    const rawYear = request.year ?? req.query?.year ?? new Date().getFullYear();
 
     const month = Number(rawMonth);
     const year = Number(rawYear);
@@ -882,33 +998,72 @@ export const generateMonthlyAutoSchedule = async (req: Request, res: Response): 
       return;
     }
 
-    const result = await generateMonthlySchedule(month, year);
-    const existingSnapshot = await db.collection("schedules").doc(result.monthId).get();
-    const existingSundays = existingSnapshot.exists ? (existingSnapshot.data()?.sundays ?? []) : [];
-    const outfitColorByDate = new Map<string, string>();
-
-    for (const entry of Array.isArray(existingSundays) ? existingSundays : []) {
-      if (typeof entry?.date === "string" && typeof entry?.outfitColor === "string") {
-        outfitColorByDate.set(entry.date.slice(0, 10), entry.outfitColor);
-      }
+    const mode: ScheduleMode = request.mode ?? "replace";
+    if (mode !== "fill-empty" && mode !== "replace") {
+      res.status(400).json({ message: "Modo invalido. Use fill-empty ou replace." });
+      return;
     }
 
-    await db.collection("schedules").doc(result.monthId).set({
-      sundays: result.sundays.map((entry) => ({
-        ...entry,
-        musicosIds: {
-          ...entry.musicosIds,
-          outfitColor: typeof entry.outfitColor === "string" ? entry.outfitColor : ((entry.musicosIds as any)?.outfitColor ?? ""),
-        },
-        outfitColor: outfitColorByDate.get(entry.date) ?? entry.outfitColor ?? "",
-      })),
-      generatedAt: new Date().toISOString(),
+    let selectedDates: string[];
+    try {
+      selectedDates = request.dates === undefined
+        ? getSundayDateKeys(month, year)
+        : validateSelectedDates(request.dates, month, year);
+    } catch (validationError) {
+      res.status(400).json({ message: String(validationError instanceof Error ? validationError.message : validationError) });
+      return;
+    }
+
+    const monthId = buildMonthId(month, year);
+    const docRef = db.collection("schedules").doc(monthId);
+    const selectedDateSet = new Set(selectedDates.map((date) => date.slice(0, 10)));
+
+    const savedSundays = await db.runTransaction(async (transaction) => {
+      const existingSnapshot = await transaction.get(docRef);
+      const existingData = existingSnapshot.exists ? existingSnapshot.data() : undefined;
+      const rawSundays: unknown[] = Array.isArray(existingData?.sundays)
+        ? existingData.sundays
+        : [];
+      const normalizedExisting = rawSundays
+        .map((entry) => normalizeStoredScheduleEntry(entry))
+        .filter((entry): entry is ScheduleEntry => entry !== null);
+      const selectedSchedules = normalizedExisting.filter((entry) =>
+        selectedDateSet.has(entry.date.slice(0, 10))
+      );
+      const lockedSchedules = normalizedExisting.filter((entry) =>
+        !selectedDateSet.has(entry.date.slice(0, 10))
+      );
+
+      const result = await generateMonthlySchedule(month, year, {
+        selectedDates,
+        selectedSchedules,
+        lockedSchedules,
+        mode,
+      });
+      const normalizedSelectedByDate = new Map(
+        selectedSchedules.map((entry) => [entry.date.slice(0, 10), entry])
+      );
+      const mergeBase = rawSundays
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+        .map((entry) => {
+          const dateKey = typeof entry.date === "string" ? entry.date.slice(0, 10) : "";
+          return normalizedSelectedByDate.get(dateKey) ?? entry as ScheduleEntry;
+        });
+      const finalSundays = buildSavedSundays(mergeBase, result.sundays, selectedDates, mode);
+
+      transaction.set(docRef, {
+        sundays: finalSundays,
+        generatedAt: new Date().toISOString(),
+      }, { merge: true });
+
+      return finalSundays;
     });
 
     res.status(201).json({
-      message: "Escala mensal gerada com sucesso.",
-      monthId: result.monthId,
-      sundays: result.sundays,
+      message: "Escalas selecionadas geradas com sucesso.",
+      monthId,
+      generatedDates: selectedDates,
+      sundays: savedSundays,
     });
   } catch (err) {
     console.error("Erro ao gerar escala mensal:", err);
@@ -919,25 +1074,285 @@ export const generateMonthlyAutoSchedule = async (req: Request, res: Response): 
   }
 };
 
-export const getSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
+class TeamGenerationError extends Error {
+  constructor(public readonly scheduleId: string, role: ScheduleRole | null) {
+    super(`Nao foi possivel montar uma equipe valida para a escala ${scheduleId}${role ? `: falta pessoa para a funcao ${role}` : ""}.`);
+  }
+}
+
+function buildSpecialScheduleTeams(
+  users: ActiveUser[],
+  selectedSchedules: ScheduleEvent[],
+  lockedSchedules: ScheduleEvent[],
+  mode: ScheduleMode
+): ScheduleEvent[] {
+  const lockedHistory: HistoryEntry[] = lockedSchedules.map((schedule) => ({
+    date: schedule.data,
+    musicos: cloneMusicos(schedule.musicosIds),
+  }));
+  const manualHistory: HistoryEntry[] = mode === "fill-empty"
+    ? selectedSchedules.map((schedule) => ({
+        date: schedule.data,
+        musicos: cloneMusicos(schedule.musicosIds),
+      }))
+    : [];
+  const { roleCounts, totalCounts } = buildHistoryMaps([...lockedHistory, ...manualHistory]);
+  const ordered = [...selectedSchedules].sort((a, b) => {
+    const dateComparison = a.data.localeCompare(b.data);
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+
+    const aTime = a.startTime || "99:99";
+    const bTime = b.startTime || "99:99";
+    return aTime.localeCompare(bTime) || (a.id ?? "").localeCompare(b.id ?? "");
+  });
+
+  return ordered.map((schedule) => {
+    const initialAssignment = mode === "fill-empty"
+      ? cloneMusicos(schedule.musicosIds)
+      : buildEmptyMusicos();
+    const emptyRoles = DEFAULT_ROLE_ORDER.flatMap((role) => {
+      if (initialAssignment[role].length > 0) {
+        return [];
+      }
+      return role === "vocal" ? [role, role] : [role];
+    });
+    const result = fillSundaySchedule(
+      users,
+      roleCounts,
+      totalCounts,
+      collectBlockedNamesByRole(null),
+      initialAssignment,
+      emptyRoles,
+      true
+    );
+
+    if (!result.assignment) {
+      throw new TeamGenerationError(schedule.id ?? "sem-id", result.missingRole);
+    }
+
+    const generatedIds = cloneMusicos(result.assignment);
+    const generatedPeople = new Set<string>();
+    for (const role of DEFAULT_ROLE_ORDER) {
+      if (initialAssignment[role].length > 0) {
+        continue;
+      }
+      for (const userId of generatedIds[role]) {
+        roleCounts[role].set(userId, (roleCounts[role].get(userId) ?? 0) + 1);
+        generatedPeople.add(userId);
+      }
+    }
+    for (const userId of generatedPeople) {
+      totalCounts.set(userId, (totalCounts.get(userId) ?? 0) + 1);
+    }
+
+    return {
+      ...schedule,
+      musicosIds: toEventMusicosIds(generatedIds, schedule.outfitColor),
+    };
+  });
+}
+
+export const generateSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { lookup } = await loadActiveUsersAndLookup();
-    const snapshot = await db.collection("specialSchedules").get();
-    const schedules = snapshot.docs.map((doc) => {
-      const data = normalizeSpecialSchedule(doc.data(), lookup);
-      const displays = resolveSpecialScheduleForResponse(data, lookup);
-      const ids = cloneMusicos(data);
-      const musicos = resolveMusicosForResponse(data, lookup);
+    const body = asRecord(req.body);
+    const rawScheduleIds = body.scheduleIds;
+    const rawDates = body.dates;
+    let scheduleIds: string[];
+    let dates: string[];
+    try {
+      ({ scheduleIds, dates } = normalizeGenerateSelection(rawScheduleIds, rawDates));
+    } catch (validationError) {
+      res.status(400).json({
+        message: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      return;
+    }
+
+    const mode = body.mode;
+    if (mode !== "fill-empty" && mode !== "replace") {
+      res.status(400).json({ message: "mode deve ser fill-empty ou replace." });
+      return;
+    }
+
+    const { users } = await loadActiveUsersAndLookup();
+    if (users.length === 0) {
+      res.status(409).json({ message: "Nao foi possivel gerar as escalas: nenhum usuario ativo encontrado." });
+      return;
+    }
+
+    const selectedIdSet = new Set(scheduleIds);
+    const createdAt = new Date().toISOString();
+    const newSchedules = dates.map((date): ScheduleEvent => {
+      const reference = db.collection("specialSchedules").doc();
       return {
-        id: doc.id,
-        ...displays,
-        ids: data,
-        musicos,
-        musicosIds: ids,
-        músicos: musicos,
-        músicosIds: ids,
+        id: reference.id,
+        evento: "",
+        data: date,
+        startTime: null,
+        outfitColor: "",
+        musicosIds: toEventMusicosIds(buildEmptyMusicos(), ""),
+        createdAt,
+        updatedAt: createdAt,
       };
     });
+    const newScheduleIds = new Set(newSchedules.flatMap((schedule) => schedule.id ? [schedule.id] : []));
+    const generatedSchedules = await db.runTransaction(async (transaction) => {
+      const snapshot = await transaction.get(db.collection("specialSchedules"));
+      const allSchedules = snapshot.docs.map((doc) =>
+        normalizeSpecialSchedule(doc.data(), doc.id)
+      );
+      const foundIds = new Set(allSchedules.map((schedule) => schedule.id));
+      const missingIds = scheduleIds.filter((id) => !foundIds.has(id));
+      if (missingIds.length > 0) {
+        const error = new Error(`Escalas nao encontradas: ${missingIds.join(", ")}.`);
+        error.name = "SchedulesNotFoundError";
+        throw error;
+      }
+
+      const selected = [
+        ...allSchedules.filter((schedule) => schedule.id && selectedIdSet.has(schedule.id)),
+        ...newSchedules,
+      ];
+      const locked = allSchedules.filter((schedule) => !schedule.id || !selectedIdSet.has(schedule.id));
+      const generated = buildSpecialScheduleTeams(users, selected, locked, mode);
+      const updatedAt = new Date().toISOString();
+
+      for (const schedule of generated) {
+        if (!schedule.id) {
+          continue;
+        }
+        const docRef = db.collection("specialSchedules").doc(schedule.id);
+        if (newScheduleIds.has(schedule.id)) {
+          const { id, ...newScheduleData } = schedule;
+          transaction.set(docRef, { ...newScheduleData, updatedAt });
+        } else {
+          transaction.set(docRef, {
+            musicosIds: schedule.musicosIds,
+            updatedAt,
+          }, { merge: true });
+        }
+        schedule.updatedAt = updatedAt;
+      }
+
+      return generated;
+    });
+
+    res.status(200).json({
+      message: "Escalas geradas com sucesso.",
+      generatedScheduleIds: generatedSchedules.flatMap((schedule) => schedule.id ? [schedule.id] : []),
+      schedules: generatedSchedules,
+    });
+  } catch (error) {
+    if (error instanceof TeamGenerationError) {
+      res.status(409).json({ message: error.message, scheduleId: error.scheduleId });
+      return;
+    }
+    if (error instanceof Error && error.name === "SchedulesNotFoundError") {
+      res.status(404).json({ message: error.message });
+      return;
+    }
+
+    console.error("Erro ao gerar escalas especiais:", error);
+    res.status(500).json({ message: "Erro inesperado ao gerar escalas.", error: String(error) });
+  }
+};
+
+export const migrateLegacySchedules = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const [monthlySnapshot, specialSnapshot] = await Promise.all([
+      db.collection("schedules").get(),
+      db.collection("specialSchedules").get(),
+    ]);
+    const existingLegacySources = new Set(
+      specialSnapshot.docs
+        .map((doc) => doc.data().legacySourceId)
+        .filter((value): value is string => typeof value === "string")
+    );
+    const pending: Array<{ ref: FirebaseFirestore.DocumentReference; data: Omit<ScheduleEvent, "id"> }> = [];
+    let skipped = 0;
+    let totalLegacy = 0;
+    const now = new Date().toISOString();
+
+    for (const monthlyDoc of monthlySnapshot.docs) {
+      const monthlyData = asRecord(monthlyDoc.data());
+      const sundays: unknown[] = Array.isArray(monthlyData.sundays) ? monthlyData.sundays : [];
+
+      sundays.forEach((rawSchedule) => {
+        totalLegacy += 1;
+        const record = asRecord(rawSchedule);
+        const rawDate = typeof record.date === "string" ? record.date.slice(0, 10) : "";
+        const legacySourceId = `${monthlyDoc.id}:${rawDate}`;
+        if (existingLegacySources.has(legacySourceId)) {
+          skipped += 1;
+          return;
+        }
+
+        let data: string;
+        try {
+          data = validateScheduleDate(rawDate);
+        } catch {
+          throw new Error(`Data invalida na escala legada ${legacySourceId}.`);
+        }
+
+        const outfitColor = getOutfitColorPayload(record);
+        const musicos = normalizeMusicos(getMusicosPayload(record));
+        pending.push({
+          ref: db.collection("specialSchedules").doc(),
+          data: {
+            evento: "",
+            data,
+            startTime: null,
+            ...(outfitColor ? { outfitColor } : {}),
+            musicosIds: toEventMusicosIds(musicos, outfitColor || undefined),
+            createdAt: now,
+            updatedAt: now,
+            legacySourceId,
+          },
+        });
+        existingLegacySources.add(legacySourceId);
+      });
+    }
+
+    for (let offset = 0; offset < pending.length; offset += 450) {
+      const batch = db.batch();
+      for (const item of pending.slice(offset, offset + 450)) {
+        batch.set(item.ref, item.data);
+      }
+      await batch.commit();
+    }
+
+    const verificationSnapshot = await db.collection("specialSchedules").get();
+    const migratedSources = new Set(
+      verificationSnapshot.docs
+        .map((doc) => doc.data().legacySourceId)
+        .filter((value): value is string => typeof value === "string")
+    );
+    const missingAfterMigration = [...existingLegacySources].filter((source) => !migratedSources.has(source));
+    if (missingAfterMigration.length > 0) {
+      throw new Error(`Falha ao confirmar migracao de: ${missingAfterMigration.join(", ")}.`);
+    }
+
+    res.status(200).json({
+      message: "Migracao concluida e verificada; os documentos antigos nao foram excluidos.",
+      totalLegacy,
+      migrated: pending.length,
+      skipped,
+      verified: true,
+    });
+  } catch (error) {
+    console.error("Erro ao migrar escalas antigas:", error);
+    res.status(500).json({ message: "Erro ao migrar escalas antigas.", error: String(error) });
+  }
+};
+
+export const getSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const snapshot = await db.collection("specialSchedules").get();
+    const schedules = snapshot.docs
+      .map((doc) => normalizeSpecialSchedule(doc.data(), doc.id))
+      .sort(compareScheduleEvents);
     res.status(200).json(schedules);
   } catch (err) {
     console.error("Erro ao buscar escala especial:", err);  
@@ -947,38 +1362,61 @@ export const getSpecialSchedules = async (req: Request, res: Response): Promise<
 
 export const postSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
-    const schedules = Array.isArray(req.body?.schedules)
-      ? req.body.schedules
-      : req.body && typeof req.body === "object"
-        ? [req.body]
-        : null;
+    const body = asRecord(req.body);
+    const schedules: unknown[] | null = Array.isArray(body.schedules)
+      ? body.schedules
+      : isRecord(req.body) ? [req.body] : null;
 
     if (!schedules || schedules.length === 0) {
       res.status(400).json({ message: "Parâmetro 'schedules' inválido ou ausente." });
       return;
     }
 
-    const { lookup } = await loadActiveUsersAndLookup();
+    let parsedSchedules: ScheduleEvent[];
+    try {
+      parsedSchedules = schedules.map((schedule, index) => parseSpecialScheduleInput(schedule, index));
+    } catch (validationError) {
+      res.status(400).json({
+        message: validationError instanceof Error ? validationError.message : String(validationError),
+      });
+      return;
+    }
 
-    for (const s of schedules) {
-      const payload = mergeSpecialSchedulePayload(s);
-      if (typeof payload?.evento !== "string" || typeof payload?.data !== "string") {
-        res.status(400).json({ message: "Objeto 'SpecialSchedule' inválido." });
+    const batch = db.batch();
+    const now = new Date().toISOString();
+    const savedIds: Array<{ id: string }> = [];
+    const idsToUpdate = parsedSchedules.flatMap((schedule) => schedule.id ? [schedule.id] : []);
+
+    if (idsToUpdate.length > 0) {
+      const updateSnapshots = await db.getAll(
+        ...idsToUpdate.map((id) => db.collection("specialSchedules").doc(id))
+      );
+      const missingIds = updateSnapshots
+        .filter((snapshot) => !snapshot.exists)
+        .map((snapshot) => snapshot.id);
+      if (missingIds.length > 0) {
+        res.status(404).json({ message: `Escalas nao encontradas: ${missingIds.join(", ")}.` });
         return;
       }
     }
 
-    for (const s of schedules) {
-      const payload = mergeSpecialSchedulePayload(s);
-      const { id, ids, musicosIds, músicosIds, ...rest } = payload;
-      const normalized = normalizeSpecialSchedule(rest, lookup);
-      await db.collection("specialSchedules").doc(normalized.data).set({
-        ...normalized,
-        timestamp: new Date().toISOString(),
-      });
+    for (const schedule of parsedSchedules) {
+      const docRef = schedule.id
+        ? db.collection("specialSchedules").doc(schedule.id)
+        : db.collection("specialSchedules").doc();
+      const { id, ...scheduleData } = schedule;
+
+      if (id) {
+        batch.set(docRef, { ...scheduleData, updatedAt: now }, { merge: true });
+      } else {
+        batch.set(docRef, { ...scheduleData, createdAt: now, updatedAt: now });
+      }
+      savedIds.push({ id: docRef.id });
     }
 
-    res.status(201).json({ message: "Escala especial salva com sucesso." });
+    await batch.commit();
+
+    res.status(201).json({ message: "Escalas salvas com sucesso.", schedules: savedIds });
   } catch (err) {
     console.error("Erro ao salvar escala especial:", err);
     res.status(500).json({ message: "Erro interno", error: String(err) });
