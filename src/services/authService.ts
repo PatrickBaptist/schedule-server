@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import { EmailService } from "./emailService";
 import { UserRole } from "../enums/UserRoles";
 import { formatPhone } from "../utils/formatPhone";
+import { resizeGooglePhotoURL } from "../utils/resizeGooglePhotoURL";
 
 export class AuthService {
     private collection;
@@ -88,7 +89,7 @@ export class AuthService {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         const email = decodedToken.email?.trim().toLowerCase();
         const name = decodedToken.name?.trim() || decodedToken.email?.split("@")[0] || "Usuario Google";
-        const photoURL = decodedToken.picture || null;
+        const photoURL = resizeGooglePhotoURL(decodedToken.picture || null);
         const firebaseUid = decodedToken.uid || decodedToken.sub || null;
 
         if (!email) {
@@ -116,8 +117,8 @@ export class AuthService {
                 ? existingUser.roles.map((role) => String(role))
                 : [UserRole.Guest];
             userStatus = (existingUser.status as UserStatus) || UserStatus.Pending;
-            responsePhotoURL = existingUser.photoURL ?? photoURL;
-            const photoURLToSave = photoURL ?? existingUser.photoURL ?? null;
+            responsePhotoURL = resizeGooglePhotoURL(existingUser.photoURL ?? photoURL);
+            const photoURLToSave = photoURL ?? resizeGooglePhotoURL(existingUser.photoURL ?? null);
             if (userStatus === UserStatus.Enabled) {
                 message = "Login realizado com sucesso";
             } else {
