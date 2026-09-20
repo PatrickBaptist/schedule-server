@@ -5,16 +5,7 @@ import { remove as removeAccents } from "diacritics";
 import { UserRole } from "../enums/UserRoles";
 import jwt from "jsonwebtoken";
 import { MusicService } from "../services/musicService";
-
-type MusicLinkData = {
-  id: string;
-  name: string;
-  link: string | null;
-  letter: string | null;
-  cifra: string | null;
-  minister?: string | null;
-  order: number;
-};
+import { isValidScheduleDate } from "../utils/musicLinks";
 
 const normalizeName = (name: string) =>
   removeAccents(name.toLowerCase()).replace(/[^a-z0-9\s]/g, "");
@@ -31,7 +22,7 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
   const musicService = new MusicService();
   try {
     
-    const musicLinks = await musicService.fetchWeeklyMusicLinks();
+    const musicLinks = await musicService.fetchMusicLinks();
     res.status(200).json(musicLinks);
   } catch (error) {
     console.error("Erro ao buscar músicas:", error);
@@ -41,7 +32,7 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
 
 export const addMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, worshipMoment, link, letter, spotify, cifra, description } = req.body;
+    const { name, worshipMoment, link, letter, spotify, cifra, description, scheduleDate } = req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -96,15 +87,26 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    if (!isValidScheduleDate(scheduleDate)) {
+      res.status(400).json({ message: "A data do repertório é obrigatória." });
+      return;
+    }
+
     const musicLinksCollection = db.collection("musicLinks");
 
-    // Busca o último documento para saber o maior `order`
+    // O filtro por momento fica em memória para não exigir índice composto.
     const snapshot = await musicLinksCollection
-      .orderBy("order", "desc")
-      .limit(1)
+      .where("scheduleDate", "==", scheduleDate)
       .get();
 
-    const lastOrder = snapshot.empty ? 0 : snapshot.docs[0].data().order ?? 0;
+    const lastOrder = snapshot.docs
+      .filter((doc) => doc.data().worshipMoment === worshipMoment)
+      .reduce((largestOrder, doc) => {
+        const order = doc.data().order;
+        return typeof order === "number" && Number.isFinite(order)
+          ? Math.max(largestOrder, order)
+          : largestOrder;
+      }, 0);
     const newOrder = lastOrder + 1;
 
     console.log('Link adicionado com sucesso:', 'nome:', name, 'link', link, 'letra', letter, 'spotify', spotify,'cifra', cifra);
@@ -125,6 +127,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         cifra: req.body.cifra || null,
         description: finalDescription,
         minister: assignedMinister || null,
+        scheduleDate,
         order: newOrder,
         createdBy: userId
       }, { merge: true });
@@ -138,6 +141,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         cifra: req.body.cifra || null,
         description: finalDescription,
         minister: assignedMinister || null,
+        scheduleDate,
         order: newOrder,
         createdBy: userId
       });
@@ -197,7 +201,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, worshipMoment, link, letter, spotify, cifra, description, order, ministeredBy } = req.body;
+    const { name, worshipMoment, link, letter, spotify, cifra, description, order, ministeredBy, scheduleDate } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -211,6 +215,11 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
 
     if (!worshipMoment) {
       res.status(400).json({ message: "Momento de louvor obrigatório" });
+      return;
+    }
+
+    if (!isValidScheduleDate(scheduleDate)) {
+      res.status(400).json({ message: "A data do repertório é obrigatória." });
       return;
     }
 
@@ -230,7 +239,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     const finalMinister = ministeredBy || oldData?.minister || null;
 
     // Atualiza o próprio documento
-    await docRef.update({ name, link: embedLink, worshipMoment, letter, spotify, cifra, description, order, minister: finalMinister });
+    await docRef.update({ name, link: embedLink, worshipMoment, letter, spotify, cifra, description, order, minister: finalMinister, scheduleDate });
 
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
@@ -277,16 +286,29 @@ export const deleteMusicLink = async (req: Request, res: Response): Promise<void
     const musicData = docSnap.exists ? docSnap.data() : null;
     await docRef.delete();
 
-    // Após deletar, buscamos todos para reordenar
-    const snapshot = await db.collection("musicLinks").orderBy("order", "asc").get();
-    const docs = snapshot.docs;
+    const scheduleDate = musicData?.scheduleDate;
+    const worshipMoment = musicData?.worshipMoment;
 
-    // Reordena os "order"
-    await Promise.all(
-      docs.map((docSnap, index) =>
-        docSnap.ref.update({ order: index + 1 })
-      )
-    );
+    if (typeof scheduleDate === "string" && scheduleDate.length > 0) {
+      const snapshot = await db.collection("musicLinks")
+        .where("scheduleDate", "==", scheduleDate)
+        .get();
+      const docs = snapshot.docs
+        .filter((remainingDoc) => remainingDoc.data().worshipMoment === worshipMoment)
+        .sort((first, second) => {
+          const firstOrder = first.data().order;
+          const secondOrder = second.data().order;
+          const safeFirstOrder = typeof firstOrder === "number" ? firstOrder : Number.MAX_SAFE_INTEGER;
+          const safeSecondOrder = typeof secondOrder === "number" ? secondOrder : Number.MAX_SAFE_INTEGER;
+          return safeFirstOrder - safeSecondOrder;
+        });
+
+      await Promise.all(
+        docs.map((remainingDoc, index) =>
+          remainingDoc.ref.update({ order: index + 1 })
+        )
+      );
+    }
 
     res.status(200).json({
       message: "Link de música removido com sucesso",

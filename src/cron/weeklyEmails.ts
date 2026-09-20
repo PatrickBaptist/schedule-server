@@ -10,7 +10,7 @@ export async function runWeeklyMusicJob() {
   const users = await userService.getAllUsers();
   if (users.length === 0) return;
 
-  const musicLinks = await musicService.fetchWeeklyMusicLinks();
+  const musicLinks = await musicService.fetchMusicLinks();
   if (musicLinks.length === 0) return;
 
   const musicListHtml =

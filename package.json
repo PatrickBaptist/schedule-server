@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/app.js",
   "scripts": {
-    "test": "npm run build && node --test dist/tests/scheduleGeneration.test.js dist/tests/specialSchedule.test.js",
+    "test": "npm run build && node --test dist/tests/scheduleGeneration.test.js dist/tests/specialSchedule.test.js dist/tests/musicLinks.test.js",
     "dev": "ts-node-dev src/app.ts",
     "build": "tsc -p .",
     "start": "node dist/app.js"
