@@ -1,4 +1,5 @@
 import { db } from "../repositories/firebaseService";
+import { compareMusicLinksByDateAndOrder } from "../utils/musicLinks";
 
 export type MusicLinkData = {
   id: string;
@@ -10,6 +11,7 @@ export type MusicLinkData = {
   cifra?: string | null;
   description?: string | null;
   minister?: string | null;
+  scheduleDate?: string | null;
   order: number;
   createdBy?: string;
 };
@@ -21,8 +23,8 @@ export class MusicService {
     this.collection = db.collection("musicLinks");
   }
 
-  async fetchWeeklyMusicLinks(): Promise<MusicLinkData[]> {
-    const snapshot = await this.collection.orderBy("order", "asc").get();
+  async fetchMusicLinks(): Promise<MusicLinkData[]> {
+    const snapshot = await this.collection.get();
 
     if (snapshot.empty) return [];
 
@@ -31,6 +33,6 @@ export class MusicService {
       ...doc.data(),
     })) as MusicLinkData[];
 
-    return musicLinks;
+    return musicLinks.sort(compareMusicLinksByDateAndOrder);
   }
 }
