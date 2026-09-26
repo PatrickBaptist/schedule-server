@@ -12,6 +12,7 @@ interface MusicLink {
   cifra?: string | null;
   minister?: string | null;
   createdAt?: Date;
+  lastUsedAt?: Date;
   nameSearch?: string[];
 }
 
@@ -109,6 +110,7 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
     const normalizedName = nameWords.split(" ");
 
     // Cria um novo documento com ID automático
+    const now = new Date();
     const newDocRef = await db.collection("allMusicLinks").add({
       name: name.trim(),
       nameSearch: normalizedName,
@@ -117,7 +119,8 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
       spotify: spotify || null,
       cifra: cifra || null,
       minister: minister || null,
-      createdAt: new Date(),
+      createdAt: now,
+      lastUsedAt: now,
     });
 
     console.log('Link adicionado com sucesso:', 'nome:', name, 'link', link, 'letra', letter, 'spotify', spotify, 'cifra', cifra);

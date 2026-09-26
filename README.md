@@ -67,6 +67,7 @@ Essas variáveis aparecem no código e precisam existir:
 - `"PORT"`: porta do servidor
 - `"JWT_SECRET"`: chave do token
 - `"GUEST_EMAIL"`: e-mail usado no login de convidado
+- `"CRON_SECRET"`: segredo enviado pelo GitHub Actions no cabeçalho `"x-cron-secret"`
 - `"RESEND_API_KEY"`: chave do serviço de e-mail
 - `"FIREBASE_PROJECT_ID"`
 - `"FIREBASE_CLIENT_EMAIL"`
@@ -250,8 +251,22 @@ Essas rotas existem para disparar tarefas automáticas manualmente:
   - envia versículo da semana
 - `GET /cron/music`
   - envia a lista de músicas da semana
-- `GET /cron/delete-musics-weekly`
-  - apaga os registros de músicas da semana
+
+As rotas de `"cron"` exigem o cabeçalho `"x-cron-secret"`. O GitHub Actions
+acorda o servidor pela rota pública `"/ping"` antes de chamar essas rotas.
+
+Ao iniciar e, enquanto estiver acordado, a cada 24 horas, o servidor remove no
+máximo 400 registros antigos de cada uma destas coleções:
+
+- `"auditLogs"`: usa `"createdAt"`
+- `"allMusicLinks"`: usa `"lastUsedAt"` e mantém a música por 24 meses sem uso
+- `"specialSchedules"`: usa a data do evento em `"data"` e mantém a escala por 13 meses
+
+O limite de retenção de auditorias é de seis meses, o de escalas especiais é
+de 13 meses e o histórico de músicas usa 24 meses. Na primeira inicialização
+após esta mudança, as músicas existentes recebem `"lastUsedAt"` com a data da
+migração. Se ainda houver registros antigos, outro lote será removido na
+próxima execução.
 
 ## Como a escala funciona
 

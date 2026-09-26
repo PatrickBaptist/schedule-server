@@ -5,7 +5,6 @@ on:
     - cron: '0 13 * * *'      # Birthday todo dia 10:00 Brasil
     - cron: '0 13 * * 1'      # Versículo segunda 10:00 Brasil
     - cron: '0 13 * * 6'      # Músicas sábado 10:00 Brasil
-    - cron: '10 13 * * 1'     # Delete músicas segunda 10:10 Brasil
   workflow_dispatch:
 
 jobs:
@@ -13,45 +12,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Aguardar Render acordar
-        run: sleep 50
+      - name: Acordar o servidor
+        run: |
+          for i in {1..15}
+          do
+            STATUS=$(curl --max-time 20 -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/ping || true)
+            if [ "$STATUS" = "200" ]; then
+              echo "Servidor acordado"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Servidor nao acordou"
+          exit 1
 
       - name: Birthday
         if: github.event.schedule == '0 13 * * *'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           for i in {1..10}
           do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/birthday)
-            if [ "$STATUS" = "200" ]; then break; fi
+            STATUS=$(curl --max-time 30 -s -o /dev/null -w "%{http_code}" -H "x-cron-secret: $CRON_SECRET" https://api.ibmmlouvor.com.br/cron/birthday || true)
+            if [ "$STATUS" = "200" ]; then exit 0; fi
             sleep 20
           done
+          exit 1
 
       - name: Versículo
         if: github.event.schedule == '0 13 * * 1'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           for i in {1..10}
           do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/verse)
-            if [ "$STATUS" = "200" ]; then break; fi
+            STATUS=$(curl --max-time 30 -s -o /dev/null -w "%{http_code}" -H "x-cron-secret: $CRON_SECRET" https://api.ibmmlouvor.com.br/cron/verse || true)
+            if [ "$STATUS" = "200" ]; then exit 0; fi
             sleep 20
           done
+          exit 1
 
       - name: Músicas
         if: github.event.schedule == '0 13 * * 6'
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           for i in {1..10}
           do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/music)
-            if [ "$STATUS" = "200" ]; then break; fi
+            STATUS=$(curl --max-time 30 -s -o /dev/null -w "%{http_code}" -H "x-cron-secret: $CRON_SECRET" https://api.ibmmlouvor.com.br/cron/music || true)
+            if [ "$STATUS" = "200" ]; then exit 0; fi
             sleep 20
           done
-
-      - name: Delete músicas
-        if: github.event.schedule == '10 13 * * 1'
-        run: |
-          for i in {1..10}
-          do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.ibmmlouvor.com.br/cron/delete-musics-weekly)
-            if [ "$STATUS" = "200" ]; then break; fi
-            sleep 20
-          done
+          exit 1
