@@ -168,7 +168,9 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         .get();
     }
 
-    // Cria um registro no histórico
+    const lastUsedAt = new Date();
+
+    // Cria um registro no histórico ou marca a reutilização da música existente.
     if (existingHistorySnap.empty) {
       await db.collection("allMusicLinks").doc(newId).set({
         name,
@@ -178,10 +180,13 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         spotify: spotify || null,
         cifra: cifra || null,
         description: finalDescription,
-        createdAt: new Date(),
+        createdAt: lastUsedAt,
+        lastUsedAt,
         minister: assignedMinister,
         createdBy: userId,
       }, { merge: true });
+    } else {
+      await existingHistorySnap.docs[0].ref.set({ lastUsedAt }, { merge: true });
     }
 
     console.log('Link adicionado com sucesso no histórico');
