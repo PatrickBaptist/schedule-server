@@ -71,6 +71,8 @@ Essas variáveis aparecem no código e precisam existir:
 
 - `"PORT"`: porta do servidor
 - `"JWT_SECRET"`: chave do token
+- `"VITE_API_URL_PRODUTION"`: origens do frontend permitidas pelo CORS, separadas
+  por vírgula, sem caminhos nem barra final.
 - `"GUEST_EMAIL"`: e-mail usado no login de convidado
 - `"CRON_SECRET"`: segredo enviado pelo GitHub Actions no cabeçalho `"x-cron-secret"`
 - `"RESEND_API_KEY"`: chave do serviço de e-mail
@@ -84,9 +86,9 @@ Essas variáveis aparecem no código e precisam existir:
 O backend usa algumas proteções:
 
 - `"Helmet"` para headers de segurança
-- `"CORS"` liberado só para:
-  - `https://ibmmlouvor.com.br`
-  - `http://localhost:5173`
+- `"CORS"` libera as origens configuradas em `"VITE_API_URL_PRODUTION"`.
+  Requisições sem o cabeçalho `"Origin"` continuam permitidas. Sem a variável,
+  nenhuma origem de navegador é liberada.
 - `"JWT"` para autenticação
 - `"bcrypt"` para senha
 - `"auditMiddleware"` para registrar ações importantes

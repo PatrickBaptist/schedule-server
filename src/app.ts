@@ -14,6 +14,12 @@ import helmet from 'helmet';
 config();
 
 const port = process.env.PORT || 3000;
+const allowedOrigins = new Set(
+    (process.env.VITE_API_URL_PRODUTION || '')
+        .split(',')
+        .map(origin => origin.trim())
+        .filter(Boolean)
+);
 const app = express();
 const DATA_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -33,10 +39,7 @@ app.use(helmet({
 app.use(cors(
     {
         origin: (origin, callback) => {
-            if (!origin || [
-                'https://ibmmlouvor.com.br',
-                'http://localhost:5173'
-            ].includes(origin)) {
+            if (!origin || allowedOrigins.has(origin)) {
                 callback(null, true);
             } else {
                 callback(new Error('Origem não permitida pelo CORS'));
