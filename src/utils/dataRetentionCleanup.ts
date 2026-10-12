@@ -1,9 +1,11 @@
 import { admin, db } from "../repositories/firebaseService";
 import { forEachActiveOrganization } from "../services/organizationJobs";
+import { isValidScheduleDate } from "./musicLinks";
 
 const AUDIT_RETENTION_MONTHS = 6;
 const SPECIAL_SCHEDULE_RETENTION_MONTHS = 13;
 const MUSIC_HISTORY_RETENTION_MONTHS = 24;
+const MUSIC_LINK_RETENTION_MONTHS = 1;
 const DELETE_LIMIT_PER_COLLECTION = 400;
 const MUSIC_HISTORY_MIGRATION_DOCUMENT = "allMusicLinksLastUsedAtV1";
 
@@ -73,7 +75,8 @@ async function deleteExpiredDocuments(
   organizationId: string,
   collection: string,
   dateField: string,
-  cutoff: Date | string
+  cutoff: Date | string,
+  isEligible?: (data: FirebaseFirestore.DocumentData) => boolean
 ): Promise<CleanupResult> {
   const snapshot = await db.collection("organizations").doc(organizationId).collection(collection)
     .where(dateField, "<", cutoff)
@@ -86,12 +89,13 @@ async function deleteExpiredDocuments(
   }
 
   const batch = db.batch();
-  snapshot.docs.forEach((document) => batch.delete(document.ref));
-  await batch.commit();
+  const expiredDocuments = snapshot.docs.filter(document => !isEligible || isEligible(document.data()));
+  expiredDocuments.forEach((document) => batch.delete(document.ref));
+  if (expiredDocuments.length > 0) await batch.commit();
 
   return {
     collection,
-    deleted: snapshot.size,
+    deleted: expiredDocuments.length,
     hasMore: snapshot.size === DELETE_LIMIT_PER_COLLECTION,
   };
 }
@@ -103,6 +107,8 @@ async function executeOrganizationCleanup(organizationId: string, referenceDate:
     SPECIAL_SCHEDULE_RETENTION_MONTHS
   ).toISOString().slice(0, 10);
   const musicHistoryCutoff = getRetentionCutoff(referenceDate, MUSIC_HISTORY_RETENTION_MONTHS);
+  const musicLinkCutoff = getRetentionCutoff(referenceDate, MUSIC_LINK_RETENTION_MONTHS)
+    .toISOString().slice(0, 10);
 
   const migratedMusicDocuments = await addLastUsedAtToExistingMusicHistory(referenceDate, organizationId);
   if (migratedMusicDocuments > 0) {
@@ -117,6 +123,8 @@ async function executeOrganizationCleanup(organizationId: string, referenceDate:
     deleteExpiredDocuments(organizationId, "auditLogs", "createdAt", auditCutoff),
     deleteExpiredDocuments(organizationId, "allMusicLinks", "lastUsedAt", musicHistoryCutoff),
     deleteExpiredDocuments(organizationId, "specialSchedules", "data", specialScheduleCutoff),
+    deleteExpiredDocuments(organizationId, "musicLinks", "scheduleDate", musicLinkCutoff,
+      data => isValidScheduleDate(data.scheduleDate)),
   ]);
 
   results.forEach(({ collection, deleted, hasMore }) => {

@@ -266,6 +266,9 @@ máximo 400 registros antigos de cada uma destas coleções:
 - `"auditLogs"`: usa `"createdAt"`
 - `"allMusicLinks"`: usa `"lastUsedAt"` e mantém a música por 24 meses sem uso
 - `"specialSchedules"`: usa a data do evento em `"data"` e mantém a escala por 13 meses
+- `"musicLinks"`: usa `"scheduleDate"` e remove repertórios cuja data passou de um mês.
+  Registros sem data válida são preservados. A biblioteca em `"allMusicLinks"`
+  continua seguindo sua própria retenção de 24 meses.
 
 O limite de retenção de auditorias é de seis meses, o de escalas especiais é
 de 13 meses e o histórico de músicas usa 24 meses. Na primeira inicialização

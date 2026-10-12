@@ -61,6 +61,10 @@ O Firebase Admin ignora regras; por isso a API também valida organização e me
 - Músicas usam `onSnapshot`; usuários, escalas, histórico e avisos usam a API.
 - Ao trocar de organização, providers e listeners anteriores são desmontados.
 - Rotinas de e-mail e retenção percorrem organizações ativas e seus dados.
+- `musicLinks` é limpo ao iniciar o servidor e a cada 24 horas enquanto ele
+  estiver ativo: músicas com `scheduleDate` anterior a um mês de calendário
+  são removidas, até 400 por organização por execução. Datas ausentes ou
+  inválidas são preservadas. Essa limpeza não remove a biblioteca `allMusicLinks`.
 
 ## Verificação
 

@@ -934,7 +934,7 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
     let sundays = [];
     const { lookup } = await loadActiveUsersAndLookup(organizationId);
     const normalizedMusicos = normalizeMusicos(rawMusicos, lookup);
-    if (SCHEDULE_ROLES.some(role => normalizedMusicos[role].some(id => !lookup.byId.has(id)))) {
+    if (SCHEDULE_ROLES.some(role => normalizedMusicos[role].some(id => !lookup.byId.has(id) && !["Convidado", "Todos cantam"].includes(id)))) {
       res.status(400).json({ message: "A escala só pode incluir membros ativos desta organização" });
       return;
     }
@@ -1399,7 +1399,7 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
     const now = new Date().toISOString();
     const savedIds: Array<{ id: string }> = [];
     const { lookup } = await loadActiveUsersAndLookup(organizationId);
-    if (parsedSchedules.some(schedule => SCHEDULE_ROLES.some(role => schedule.musicosIds[role].some(id => !lookup.byId.has(id))))) {
+    if (parsedSchedules.some(schedule => SCHEDULE_ROLES.some(role => schedule.musicosIds[role].some(id => !lookup.byId.has(id) && !["Convidado", "Todos cantam"].includes(id))))) {
       res.status(400).json({ message: "A escala só pode incluir membros ativos desta organização" });
       return;
     }
