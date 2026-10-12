@@ -1,13 +1,17 @@
 import { EmailService } from "../services/emailService";
 import { VerseService } from "../services/verseService";
-import { UserService } from "../services/usersService";
+import { forEachActiveOrganization, getEnabledOrganizationUsers } from "../services/organizationJobs";
 
 export async function runWeeklyVerseJob() {
+  await forEachActiveOrganization(runForOrganization);
+}
+
+async function runForOrganization(organizationId: string) {
   const emailService = new EmailService();
   const verseService = new VerseService();
-  const userService = new UserService();
 
-  const users = await userService.getAllUsers();
+
+  const users = await getEnabledOrganizationUsers(organizationId);
   if (users.length === 0) return;
 
   const { verse, reference } = await verseService.getVerseOfTheDay();

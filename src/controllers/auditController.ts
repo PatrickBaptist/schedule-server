@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { db } from "../repositories/firebaseService";
+import { getOrganizationCollection } from "../repositories/organizationData";
 
 type AuditMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -170,7 +171,11 @@ export class AuditController {
 
       const scanLimit = Math.max(limit * 8, 200);
       const cappedScanLimit = Math.min(scanLimit, 2000);
-      const snapshot = await db.collection("auditLogs").orderBy("createdAt", "desc").limit(cappedScanLimit).get();
+      const organizationId = req.organizationId || req.params.organizationId;
+      const auditLogs = organizationId
+        ? getOrganizationCollection(organizationId, "auditLogs")
+        : db.collection("auditLogs");
+      const snapshot = await auditLogs.orderBy("createdAt", "desc").limit(cappedScanLimit).get();
 
       const logs: AuditListItemInternal[] = snapshot.docs
         .map((doc) => {

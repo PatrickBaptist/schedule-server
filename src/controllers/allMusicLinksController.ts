@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { db } from "../repositories/firebaseService";
 import convertToEmbedUrl from "../utils/convertVideos";
 import { remove as removeAccents } from "diacritics";
 import { UserRole } from "../enums/UserRoles";
+import { getOrganizationCollection } from "../repositories/organizationData";
 
 interface MusicLink {
   name: string;
@@ -26,6 +26,12 @@ function normalizeString(str: string) {
     .replace(/[^\w\s]/gi, "")
     .toLowerCase()
     .trim();
+}
+
+function getHistoryCollection(req: Request) {
+  const organizationId = req.organizationId || req.params.organizationId;
+  if (!organizationId) throw new Error("Organização obrigatória");
+  return getOrganizationCollection(organizationId, "allMusicLinks");
 }
 
 export const getAllMusicLinks = async (req: Request, res: Response): Promise<void> => {
@@ -53,7 +59,7 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    let queryRef = db.collection("allMusicLinks").orderBy("createdAt", "desc");
+    let queryRef = getHistoryCollection(req).orderBy("createdAt", "desc");
 
     // Busca insensível a acentos e pontuação
     let searchWords: string[] = [];
@@ -111,7 +117,7 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
 
     // Cria um novo documento com ID automático
     const now = new Date();
-    const newDocRef = await db.collection("allMusicLinks").add({
+    const newDocRef = await getHistoryCollection(req).add({
       name: name.trim(),
       nameSearch: normalizedName,
       link: embedLink,
@@ -156,7 +162,7 @@ export const updateAllMusicLink = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const docRef = db.collection("allMusicLinks").doc(id);
+    const docRef = getHistoryCollection(req).doc(id);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
@@ -205,7 +211,7 @@ export const deleteAllMusicLink = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const docRef = db.collection("allMusicLinks").doc(id);
+    const docRef = getHistoryCollection(req).doc(id);
     const docSnap = await docRef.get();
     const musicData = docSnap.exists ? docSnap.data() : null;
     await docRef.delete();

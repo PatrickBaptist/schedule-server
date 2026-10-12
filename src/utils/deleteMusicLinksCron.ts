@@ -1,9 +1,10 @@
 import { db } from "../repositories/firebaseService";
+import { getOrganizationCollection } from "../repositories/organizationData";
 
-export const clearAllMusicLinks = async (): Promise<void> => {
+export const clearAllMusicLinks = async (organizationId: string): Promise<void> => {
   console.log("Limpando todos os musicLinks...");
 
-  const snapshot = await db.collection("musicLinks").get();
+  const snapshot = await getOrganizationCollection(organizationId, "musicLinks").get();
 
   if (snapshot.empty) {
     console.log("Nenhum musicLink para apagar");

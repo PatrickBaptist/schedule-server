@@ -1,15 +1,19 @@
 import dayjs from "dayjs";
-import { UserService } from "../services/usersService";
+import { forEachActiveOrganization, getEnabledOrganizationUsers, getOrganizationDate } from "../services/organizationJobs";
 import { EmailService } from "../services/emailService";
 
 export async function runBirthdayJob() {
-  const userService = new UserService();
+  await forEachActiveOrganization(runForOrganization);
+}
+
+async function runForOrganization(organizationId: string) {
+
   const emailService = new EmailService();
 
   console.log("Verificando aniversários...");
 
-  const users = await userService.getAllUsers();
-  const today = dayjs().format("MM-DD");
+  const users = await getEnabledOrganizationUsers(organizationId);
+  const today = dayjs(await getOrganizationDate(organizationId)).format("MM-DD");
 
   const birthdayUsers = users.filter((u) =>
     u.birthDate && dayjs(u.birthDate).format("MM-DD") === today

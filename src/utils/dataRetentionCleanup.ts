@@ -1,4 +1,5 @@
 import { admin, db } from "../repositories/firebaseService";
+import { forEachActiveOrganization } from "../services/organizationJobs";
 
 const AUDIT_RETENTION_MONTHS = 6;
 const SPECIAL_SCHEDULE_RETENTION_MONTHS = 13;
@@ -34,15 +35,15 @@ export function getRetentionCutoff(
   return cutoff;
 }
 
-async function addLastUsedAtToExistingMusicHistory(referenceDate: Date): Promise<number> {
-  const migrationRef = db.collection("maintenance").doc(MUSIC_HISTORY_MIGRATION_DOCUMENT);
+async function addLastUsedAtToExistingMusicHistory(referenceDate: Date, organizationId: string): Promise<number> {
+  const migrationRef = db.collection("organizations").doc(organizationId).collection("maintenance").doc(MUSIC_HISTORY_MIGRATION_DOCUMENT);
   const migrationSnapshot = await migrationRef.get();
 
   if (migrationSnapshot.exists) {
     return 0;
   }
 
-  const musicSnapshot = await db.collection("allMusicLinks").get();
+  const musicSnapshot = await db.collection("organizations").doc(organizationId).collection("allMusicLinks").get();
   const documentsWithoutLastUsedAt = musicSnapshot.docs.filter((document) => {
     const lastUsedAt = document.data().lastUsedAt;
     return lastUsedAt === undefined || lastUsedAt === null;
@@ -69,11 +70,12 @@ async function addLastUsedAtToExistingMusicHistory(referenceDate: Date): Promise
 }
 
 async function deleteExpiredDocuments(
+  organizationId: string,
   collection: string,
   dateField: string,
   cutoff: Date | string
 ): Promise<CleanupResult> {
-  const snapshot = await db.collection(collection)
+  const snapshot = await db.collection("organizations").doc(organizationId).collection(collection)
     .where(dateField, "<", cutoff)
     .orderBy(dateField, "asc")
     .limit(DELETE_LIMIT_PER_COLLECTION)
@@ -94,7 +96,7 @@ async function deleteExpiredDocuments(
   };
 }
 
-async function executeDataRetentionCleanup(referenceDate = new Date()): Promise<CleanupResult[]> {
+async function executeOrganizationCleanup(organizationId: string, referenceDate: Date): Promise<CleanupResult[]> {
   const auditCutoff = getRetentionCutoff(referenceDate, AUDIT_RETENTION_MONTHS);
   const specialScheduleCutoff = getRetentionCutoff(
     referenceDate,
@@ -102,7 +104,7 @@ async function executeDataRetentionCleanup(referenceDate = new Date()): Promise<
   ).toISOString().slice(0, 10);
   const musicHistoryCutoff = getRetentionCutoff(referenceDate, MUSIC_HISTORY_RETENTION_MONTHS);
 
-  const migratedMusicDocuments = await addLastUsedAtToExistingMusicHistory(referenceDate);
+  const migratedMusicDocuments = await addLastUsedAtToExistingMusicHistory(referenceDate, organizationId);
   if (migratedMusicDocuments > 0) {
     console.log(
       `Migracao de allMusicLinks: lastUsedAt adicionado em ${migratedMusicDocuments} registro(s).`
@@ -112,9 +114,9 @@ async function executeDataRetentionCleanup(referenceDate = new Date()): Promise<
   console.log(`Iniciando limpeza de dados anteriores a ${specialScheduleCutoff}.`);
 
   const results = await Promise.all([
-    deleteExpiredDocuments("auditLogs", "createdAt", auditCutoff),
-    deleteExpiredDocuments("allMusicLinks", "lastUsedAt", musicHistoryCutoff),
-    deleteExpiredDocuments("specialSchedules", "data", specialScheduleCutoff),
+    deleteExpiredDocuments(organizationId, "auditLogs", "createdAt", auditCutoff),
+    deleteExpiredDocuments(organizationId, "allMusicLinks", "lastUsedAt", musicHistoryCutoff),
+    deleteExpiredDocuments(organizationId, "specialSchedules", "data", specialScheduleCutoff),
   ]);
 
   results.forEach(({ collection, deleted, hasMore }) => {
@@ -124,6 +126,14 @@ async function executeDataRetentionCleanup(referenceDate = new Date()): Promise<
     );
   });
 
+  return results;
+}
+
+async function executeDataRetentionCleanup(referenceDate = new Date()): Promise<CleanupResult[]> {
+  const results: CleanupResult[] = [];
+  await forEachActiveOrganization(async organizationId => {
+    results.push(...await executeOrganizationCleanup(organizationId, referenceDate));
+  });
   return results;
 }
 

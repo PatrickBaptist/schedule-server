@@ -58,7 +58,7 @@ export class AuthController {
 
       const user = await authService.me(token);
 
-      if (user.roles?.includes(UserRole.Guest)) {
+      if ((user.roles as string[])?.includes(UserRole.Guest)) {
         const { email, ...safeUser } = user;
         res.status(200).json(safeUser);
         return;

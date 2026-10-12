@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function canReadMusic(organizationId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'enabled'
+        && get(/databases/$(database)/documents/organizations/$(organizationId)).data.status == 'active'
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.status == 'enabled';
+    }
+    match /organizations/{organizationId}/musicLinks/{musicId} {
+      allow read: if canReadMusic(organizationId);
+      allow write: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

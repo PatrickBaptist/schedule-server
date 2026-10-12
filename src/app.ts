@@ -1,15 +1,12 @@
 import express from 'express';
 import cors from 'cors';
-import scheduleRoutes from './routes/scheduleRoutes';
-import musicListRoutes from './routes/musicListRoutes';
-import allMusicLinksRoutes from './routes/allMusicLinksRoutes';
-import notificationRoutes from './routes/notificationRoutes';
 import authUserRoutes from './routes/authUserRoutes';
 import usersRouter from './routes/usersRoutes';
 import cronsRoutes from './routes/cronsRoutes';
-import auditRoutes from './routes/auditRoutes';
 import { auditMiddleware } from './middlewares/auditMiddleware';
 import { runDataRetentionCleanup } from './utils/dataRetentionCleanup';
+import organizationRoutes, { invitationRoutes } from './routes/organizationRoutes';
+import organizationDataRoutes from './routes/organizationDataRoutes';
 
 import { config } from 'dotenv';
 import helmet from 'helmet';
@@ -51,13 +48,11 @@ app.use(cors(
 app.use("/cron", cronsRoutes);
 
 app.use("/auth", authUserRoutes);
+app.use("/organizations", organizationRoutes);
+app.use("/organizations/:organizationId", organizationDataRoutes);
+app.use("/invitations", invitationRoutes);
+// Account profile is global; organization members are managed by scoped routes.
 app.use("/users", usersRouter);
-app.use("/audit", auditRoutes);
-
-app.use("/schedule", scheduleRoutes);
-app.use("/musicList", musicListRoutes);
-app.use("/allMusicLinks", allMusicLinksRoutes);
-app.use("/notification", notificationRoutes);
 
 app.get('/ping', (req, res) => {
     res.status(200).json({ message: 'Sistema funcionando' })

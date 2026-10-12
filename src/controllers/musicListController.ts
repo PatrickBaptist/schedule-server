@@ -3,9 +3,9 @@ import { db } from "../repositories/firebaseService";
 import convertToEmbedUrl from "../utils/convertVideos";
 import { remove as removeAccents } from "diacritics";
 import { UserRole } from "../enums/UserRoles";
-import jwt from "jsonwebtoken";
 import { MusicService } from "../services/musicService";
 import { isValidScheduleDate } from "../utils/musicLinks";
+import { getOrganizationCollection } from "../repositories/organizationData";
 
 const normalizeName = (name: string) =>
   removeAccents(name.toLowerCase()).replace(/[^a-z0-9\s]/g, "");
@@ -18,10 +18,15 @@ function normalizeString(str: string) {
     .toLowerCase();
 }
 
+function getOrganizationId(req: Request): string {
+  const organizationId = req.organizationId || req.params.organizationId;
+  if (!organizationId) throw new Error("Organização obrigatória");
+  return organizationId;
+}
+
 export const getMusicLinks = async (req: Request, res: Response): Promise<void> => {
-  const musicService = new MusicService();
   try {
-    
+    const musicService = new MusicService(getOrganizationId(req));
     const musicLinks = await musicService.fetchMusicLinks();
     res.status(200).json(musicLinks);
   } catch (error) {
@@ -33,25 +38,12 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
 export const addMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, worshipMoment, link, letter, spotify, cifra, description, scheduleDate } = req.body;
-
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      res.status(401).json({ message: "Token não fornecido" });
+    const organizationId = getOrganizationId(req);
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) {
+      res.status(401).json({ message: "Usuário não autenticado" });
       return;
     }
-
-    const token = authHeader.split(" ")[1];
-
-    let decoded: any;
-
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET as string);
-    } catch (err) {
-      res.status(403).json({ message: "Token inválido" });
-      return;
-    }
-
-    const userId = decoded.userId;
 
     const userDoc = await db.collection("users").doc(userId).get();
     if (!userDoc.exists) {
@@ -68,8 +60,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
     const allowedRoles = [UserRole.Minister];
     let assignedMinister: string | null = null;
 
-     if (userData?.roles && userData.roles.some((role: string) => allowedRoles.includes(role as UserRole))) {
-      assignedMinister = userData.nickname || userData.name;
+     if (req.membership?.musicalRoles?.some((role: string) => allowedRoles.includes(role as UserRole))) {
+      assignedMinister = (req.membership as any).nickname || userData.nickname || userData.name;
     } else if (req.body.ministeredBy){
       assignedMinister = req.body.ministeredBy;
     } else {
@@ -92,7 +84,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const musicLinksCollection = db.collection("musicLinks");
+    const musicLinksCollection = getOrganizationCollection(organizationId, "musicLinks");
+    const historyCollection = getOrganizationCollection(organizationId, "allMusicLinks");
 
     // O filtro por momento fica em memória para não exigir índice composto.
     const snapshot = await musicLinksCollection
@@ -155,13 +148,13 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
     let existingHistorySnap;
 
     if (embedLink) {
-      existingHistorySnap = await db.collection("allMusicLinks")
+      existingHistorySnap = await historyCollection
         .where("link", "==", embedLink)
         .where("minister", "==", assignedMinister)
         .limit(1)
         .get();
     } else {
-      existingHistorySnap = await db.collection("allMusicLinks")
+      existingHistorySnap = await historyCollection
         .where("name", "==", name.trim())
         .where("minister", "==", assignedMinister)
         .limit(1)
@@ -172,7 +165,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 
     // Cria um registro no histórico ou marca a reutilização da música existente.
     if (existingHistorySnap.empty) {
-      await db.collection("allMusicLinks").doc(newId).set({
+      await historyCollection.doc(newId).set({
         name,
         nameSearch: normalizedName,
         link: embedLink,
@@ -206,6 +199,7 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
 export const updateMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const organizationId = getOrganizationId(req);
     const { name, worshipMoment, link, letter, spotify, cifra, description, order, ministeredBy, scheduleDate } = req.body;
 
     if (!id) {
@@ -228,7 +222,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const docRef = db.collection("musicLinks").doc(id);
+    const docRef = getOrganizationCollection(organizationId, "musicLinks").doc(id);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
@@ -249,7 +243,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
     const normalizedName = nameWords.split(" ");
-    await db.collection("allMusicLinks").doc(id).set(
+    await getOrganizationCollection(organizationId, "allMusicLinks").doc(id).set(
       { name, 
         nameSearch: normalizedName, 
         link: embedLink,
@@ -280,13 +274,15 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
 export const deleteMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params; // ID do link a remover
+    const organizationId = getOrganizationId(req);
+    const musicCollection = getOrganizationCollection(organizationId, "musicLinks");
 
     if (!id) {
       res.status(400).json({ message: "ID do link obrigatório" });
       return;
     }
 
-    const docRef = db.collection("musicLinks").doc(id);
+    const docRef = musicCollection.doc(id);
     const docSnap = await docRef.get();
     const musicData = docSnap.exists ? docSnap.data() : null;
     await docRef.delete();
@@ -295,7 +291,7 @@ export const deleteMusicLink = async (req: Request, res: Response): Promise<void
     const worshipMoment = musicData?.worshipMoment;
 
     if (typeof scheduleDate === "string" && scheduleDate.length > 0) {
-      const snapshot = await db.collection("musicLinks")
+      const snapshot = await musicCollection
         .where("scheduleDate", "==", scheduleDate)
         .get();
       const docs = snapshot.docs

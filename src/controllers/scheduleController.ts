@@ -1,6 +1,7 @@
 ﻿import { Request, Response } from "express";
 import { db } from "../repositories/firebaseService";
 import { UserStatus } from "../enums/UserStatus";
+import { getOrganizationCollection, getOrganizationRef } from "../repositories/organizationData";
 import {
   buildSavedSundays,
   cloneMusicosIds,
@@ -55,6 +56,12 @@ interface ScheduleMusicoDisplay {
 interface HistoryEntry {
   date: string;
   musicos: MusicosIds;
+}
+
+function getOrganizationId(req: Request): string {
+  const organizationId = req.organizationId || req.params.organizationId;
+  if (!organizationId) throw new Error("Organização obrigatória");
+  return organizationId;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -668,6 +675,7 @@ function fillSundaySchedule(
 }
 
 async function generateMonthlySchedule(
+  organizationId: string,
   month: number,
   year: number,
   options: GenerateScheduleOptions
@@ -676,40 +684,13 @@ async function generateMonthlySchedule(
   const targetMonthStart = new Date(year, month - 1, 1);
   const targetMonthStartKey = toDateKey(targetMonthStart);
 
-  const usersSnapshot = await db
-    .collection("users")
-    .where("status", "==", UserStatus.Enabled)
-    .get();
-
-  const users: ActiveUser[] = usersSnapshot.docs.map((doc) => {
-    const data = doc.data() as Partial<ActiveUser> & {
-      name?: string;
-      nickname?: string | null;
-      roles?: string[];
-      rolesLower?: string[];
-      instruments?: string[];
-      canLeadWorship?: boolean;
-      status?: string;
-    };
-
-    return {
-      id: doc.id,
-      name: data.name ?? "",
-      nickname: data.nickname ?? null,
-      status: data.status,
-      roles: Array.isArray(data.roles) ? data.roles : [],
-      rolesLower: Array.isArray(data.rolesLower) ? data.rolesLower : [],
-      instruments: Array.isArray(data.instruments) ? data.instruments : [],
-      canLeadWorship: Boolean(data.canLeadWorship),
-    };
-  });
-  const lookup = getUserLookup(users);
+  const { users, lookup } = await loadActiveUsersAndLookup(organizationId);
 
   if (users.length === 0) {
     throw new Error("Nenhum usuario ativo encontrado.");
   }
 
-  const allSchedulesSnapshot = await db.collection("schedules").get();
+  const allSchedulesSnapshot = await getOrganizationCollection(organizationId, "schedules").get();
   const allHistoryEntries = allSchedulesSnapshot.docs
     .filter((doc) => doc.id !== monthId)
     .flatMap((doc) => extractHistoryFromDoc(doc.data(), lookup));
@@ -794,32 +775,48 @@ async function generateMonthlySchedule(
   };
 }
 
-async function loadActiveUsersAndLookup() {
-  const usersSnapshot = await db
-    .collection("users")
+async function loadActiveUsersAndLookup(organizationId: string) {
+  const membersSnapshot = await getOrganizationRef(organizationId)
+    .collection("members")
     .where("status", "==", UserStatus.Enabled)
     .get();
 
-  const users: ActiveUser[] = usersSnapshot.docs.map((doc) => {
-    const data = doc.data() as Partial<ActiveUser> & {
+  if (membersSnapshot.empty) {
+    return { users: [] as ActiveUser[], lookup: getUserLookup([]) };
+  }
+
+  const userSnapshots = await db.getAll(
+    ...membersSnapshot.docs.map((member) => db.collection("users").doc(member.id))
+  );
+  const globalUsers = new Map(
+    userSnapshots.filter((user) => user.exists).map((user) => [user.id, user.data() ?? {}])
+  );
+
+  const users: ActiveUser[] = membersSnapshot.docs.map((doc) => {
+    const membership = doc.data() as Partial<ActiveUser> & {
       name?: string;
       nickname?: string | null;
       roles?: string[];
       rolesLower?: string[];
+      musicalRoles?: string[];
       instruments?: string[];
       canLeadWorship?: boolean;
       status?: string;
     };
+    const identity = globalUsers.get(doc.id) as Record<string, unknown> | undefined;
+    const roles = Array.isArray(membership.musicalRoles)
+      ? membership.musicalRoles
+      : Array.isArray(membership.roles) ? membership.roles : [];
 
     return {
       id: doc.id,
-      name: data.name ?? "",
-      nickname: data.nickname ?? null,
-      status: data.status,
-      roles: Array.isArray(data.roles) ? data.roles : [],
-      rolesLower: Array.isArray(data.rolesLower) ? data.rolesLower : [],
-      instruments: Array.isArray(data.instruments) ? data.instruments : [],
-      canLeadWorship: Boolean(data.canLeadWorship),
+      name: typeof identity?.name === "string" ? identity.name : membership.name ?? "",
+      nickname: membership.nickname ?? (typeof identity?.nickname === "string" ? identity.nickname : null),
+      status: membership.status,
+      roles,
+      rolesLower: roles.map((role) => String(role).toLowerCase()),
+      instruments: Array.isArray(membership.instruments) ? membership.instruments : [],
+      canLeadWorship: Boolean(membership.canLeadWorship),
     };
   });
 
@@ -832,13 +829,14 @@ async function loadActiveUsersAndLookup() {
 export const getMonthlySchedule = async (req: Request, res: Response): Promise<void> => {
   try {
     const { month } = req.params;
+    const organizationId = getOrganizationId(req);
 
     if (!month) {
       res.status(400).json({ message: "MÃªs obrigatÃ³rio" });
       return;
     }
 
-    const docRef = db.collection("schedules").doc(month);
+    const docRef = getOrganizationCollection(organizationId, "schedules").doc(month);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
@@ -846,7 +844,7 @@ export const getMonthlySchedule = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const { lookup } = await loadActiveUsersAndLookup();
+    const { lookup } = await loadActiveUsersAndLookup(organizationId);
     const data = docSnap.data();
     const sundays = Array.isArray(data?.sundays) ? data.sundays : [];
 
@@ -862,6 +860,7 @@ export const getMonthlySchedule = async (req: Request, res: Response): Promise<v
 
 export const getNextSundaySchedule = async (req: Request, res: Response): Promise<void> => {
   try {
+    const organizationId = getOrganizationId(req);
     const today = new Date();
     const day = today.getDay(); // 0 = domingo
     const daysUntilSunday = (7 - day) % 7;
@@ -874,7 +873,7 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
     const year = nextSunday.getFullYear();
     const monthId = `${formattedMonth}-${year}`;
 
-    const docRef = db.collection("schedules").doc(monthId);
+    const docRef = getOrganizationCollection(organizationId, "schedules").doc(monthId);
     const snapshot = await docRef.get();
 
     if (!snapshot.exists) {
@@ -882,7 +881,7 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
       return;
     }
 
-    const { lookup } = await loadActiveUsersAndLookup();
+    const { lookup } = await loadActiveUsersAndLookup(organizationId);
     const data = snapshot.data();
     const sundays = Array.isArray(data?.sundays) ? data.sundays : [];
 
@@ -914,6 +913,7 @@ export const getNextSundaySchedule = async (req: Request, res: Response): Promis
 };
 
 export const upsertSchedule = async (req: Request, res: Response): Promise<void> => {
+  const organizationId = getOrganizationId(req);
   const body = req.body ?? {};
   const month = body.month;
   const year = body.year;
@@ -927,13 +927,17 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
   }
 
   const monthId = `${month}-${year}`;
-  const docRef = db.collection('schedules').doc(monthId);
+  const docRef = getOrganizationCollection(organizationId, "schedules").doc(monthId);
 
   try {
     const docSnap = await docRef.get();
     let sundays = [];
-    const { lookup } = await loadActiveUsersAndLookup();
+    const { lookup } = await loadActiveUsersAndLookup(organizationId);
     const normalizedMusicos = normalizeMusicos(rawMusicos, lookup);
+    if (SCHEDULE_ROLES.some(role => normalizedMusicos[role].some(id => !lookup.byId.has(id)))) {
+      res.status(400).json({ message: "A escala só pode incluir membros ativos desta organização" });
+      return;
+    }
 
     if (docSnap.exists) {
       const data = docSnap.data();
@@ -981,6 +985,7 @@ export const upsertSchedule = async (req: Request, res: Response): Promise<void>
 
 export const generateMonthlyAutoSchedule = async (req: Request, res: Response): Promise<void> => {
   try {
+    const organizationId = getOrganizationId(req);
     const request = (req.body ?? {}) as Partial<GenerateSelectedScheduleRequest>;
     const rawMonth = request.month ?? req.query?.month ?? new Date().getMonth() + 1;
     const rawYear = request.year ?? req.query?.year ?? new Date().getFullYear();
@@ -1015,7 +1020,7 @@ export const generateMonthlyAutoSchedule = async (req: Request, res: Response): 
     }
 
     const monthId = buildMonthId(month, year);
-    const docRef = db.collection("schedules").doc(monthId);
+    const docRef = getOrganizationCollection(organizationId, "schedules").doc(monthId);
     const selectedDateSet = new Set(selectedDates.map((date) => date.slice(0, 10)));
 
     const savedSundays = await db.runTransaction(async (transaction) => {
@@ -1034,7 +1039,7 @@ export const generateMonthlyAutoSchedule = async (req: Request, res: Response): 
         !selectedDateSet.has(entry.date.slice(0, 10))
       );
 
-      const result = await generateMonthlySchedule(month, year, {
+      const result = await generateMonthlySchedule(organizationId, month, year, {
         selectedDates,
         selectedSchedules,
         lockedSchedules,
@@ -1156,6 +1161,8 @@ function buildSpecialScheduleTeams(
 
 export const generateSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
+    const organizationId = getOrganizationId(req);
+    const specialSchedules = getOrganizationCollection(organizationId, "specialSchedules");
     const body = asRecord(req.body);
     const rawScheduleIds = body.scheduleIds;
     const rawDates = body.dates;
@@ -1176,7 +1183,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
       return;
     }
 
-    const { users } = await loadActiveUsersAndLookup();
+    const { users } = await loadActiveUsersAndLookup(organizationId);
     if (users.length === 0) {
       res.status(409).json({ message: "Nao foi possivel gerar as escalas: nenhum usuario ativo encontrado." });
       return;
@@ -1185,7 +1192,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
     const selectedIdSet = new Set(scheduleIds);
     const createdAt = new Date().toISOString();
     const newSchedules = dates.map((date): ScheduleEvent => {
-      const reference = db.collection("specialSchedules").doc();
+      const reference = specialSchedules.doc();
       return {
         id: reference.id,
         evento: "",
@@ -1199,7 +1206,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
     });
     const newScheduleIds = new Set(newSchedules.flatMap((schedule) => schedule.id ? [schedule.id] : []));
     const generatedSchedules = await db.runTransaction(async (transaction) => {
-      const snapshot = await transaction.get(db.collection("specialSchedules"));
+      const snapshot = await transaction.get(specialSchedules);
       const allSchedules = snapshot.docs.map((doc) =>
         normalizeSpecialSchedule(doc.data(), doc.id)
       );
@@ -1223,7 +1230,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
         if (!schedule.id) {
           continue;
         }
-        const docRef = db.collection("specialSchedules").doc(schedule.id);
+        const docRef = specialSchedules.doc(schedule.id);
         if (newScheduleIds.has(schedule.id)) {
           const { id, ...newScheduleData } = schedule;
           transaction.set(docRef, { ...newScheduleData, updatedAt });
@@ -1259,11 +1266,14 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
   }
 };
 
-export const migrateLegacySchedules = async (_req: Request, res: Response): Promise<void> => {
+export const migrateLegacySchedules = async (req: Request, res: Response): Promise<void> => {
   try {
+    const organizationId = getOrganizationId(req);
+    const monthlySchedules = getOrganizationCollection(organizationId, "schedules");
+    const specialSchedules = getOrganizationCollection(organizationId, "specialSchedules");
     const [monthlySnapshot, specialSnapshot] = await Promise.all([
-      db.collection("schedules").get(),
-      db.collection("specialSchedules").get(),
+      monthlySchedules.get(),
+      specialSchedules.get(),
     ]);
     const existingLegacySources = new Set(
       specialSnapshot.docs
@@ -1299,7 +1309,7 @@ export const migrateLegacySchedules = async (_req: Request, res: Response): Prom
         const outfitColor = getOutfitColorPayload(record);
         const musicos = normalizeMusicos(getMusicosPayload(record));
         pending.push({
-          ref: db.collection("specialSchedules").doc(),
+          ref: specialSchedules.doc(),
           data: {
             evento: "",
             data,
@@ -1323,7 +1333,7 @@ export const migrateLegacySchedules = async (_req: Request, res: Response): Prom
       await batch.commit();
     }
 
-    const verificationSnapshot = await db.collection("specialSchedules").get();
+    const verificationSnapshot = await specialSchedules.get();
     const migratedSources = new Set(
       verificationSnapshot.docs
         .map((doc) => doc.data().legacySourceId)
@@ -1349,7 +1359,8 @@ export const migrateLegacySchedules = async (_req: Request, res: Response): Prom
 
 export const getSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
-    const snapshot = await db.collection("specialSchedules").get();
+    const organizationId = getOrganizationId(req);
+    const snapshot = await getOrganizationCollection(organizationId, "specialSchedules").get();
     const schedules = snapshot.docs
       .map((doc) => normalizeSpecialSchedule(doc.data(), doc.id))
       .sort(compareScheduleEvents);
@@ -1362,6 +1373,8 @@ export const getSpecialSchedules = async (req: Request, res: Response): Promise<
 
 export const postSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
+    const organizationId = getOrganizationId(req);
+    const specialSchedules = getOrganizationCollection(organizationId, "specialSchedules");
     const body = asRecord(req.body);
     const schedules: unknown[] | null = Array.isArray(body.schedules)
       ? body.schedules
@@ -1385,11 +1398,16 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
     const batch = db.batch();
     const now = new Date().toISOString();
     const savedIds: Array<{ id: string }> = [];
+    const { lookup } = await loadActiveUsersAndLookup(organizationId);
+    if (parsedSchedules.some(schedule => SCHEDULE_ROLES.some(role => schedule.musicosIds[role].some(id => !lookup.byId.has(id))))) {
+      res.status(400).json({ message: "A escala só pode incluir membros ativos desta organização" });
+      return;
+    }
     const idsToUpdate = parsedSchedules.flatMap((schedule) => schedule.id ? [schedule.id] : []);
 
     if (idsToUpdate.length > 0) {
       const updateSnapshots = await db.getAll(
-        ...idsToUpdate.map((id) => db.collection("specialSchedules").doc(id))
+        ...idsToUpdate.map((id) => specialSchedules.doc(id))
       );
       const missingIds = updateSnapshots
         .filter((snapshot) => !snapshot.exists)
@@ -1402,8 +1420,8 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
 
     for (const schedule of parsedSchedules) {
       const docRef = schedule.id
-        ? db.collection("specialSchedules").doc(schedule.id)
-        : db.collection("specialSchedules").doc();
+        ? specialSchedules.doc(schedule.id)
+        : specialSchedules.doc();
       const { id, ...scheduleData } = schedule;
 
       if (id) {
@@ -1426,13 +1444,14 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
 export const deleteSpecialSchedules = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
+    const organizationId = getOrganizationId(req);
 
     if (!id) {
       res.status(400).json({ success: false, error: "ID Ã© obrigatÃ³rio." });
       return;
     }
 
-    const docRef = db.collection("specialSchedules").doc(id);
+    const docRef = getOrganizationCollection(organizationId, "specialSchedules").doc(id);
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {

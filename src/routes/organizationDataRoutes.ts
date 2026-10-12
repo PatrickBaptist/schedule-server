@@ -1,0 +1,28 @@
+import { Router } from "express";
+import { authenticateToken } from "../middlewares/authorizatizeToken";
+import { requireOrganizationMembership } from "../middlewares/requireOrganizationMembership";
+import { authorizeRoles } from "../middlewares/authorizatizeAdmin";
+import { UserRole as Role } from "../enums/UserRoles";
+import musicRoutes from "./musicListRoutes";
+import historyRoutes from "./allMusicLinksRoutes";
+import scheduleRoutes from "./scheduleRoutes";
+import notificationRoutes from "./notificationRoutes";
+import { AuditController } from "../controllers/auditController";
+import { OrganizationUsersController as Users } from "../controllers/organizationUsersController";
+
+const router = Router({ mergeParams: true });
+router.use(authenticateToken, requireOrganizationMembership);
+const manage = authorizeRoles(Role.Admin, Role.Leader);
+router.use("/musicList", musicRoutes);
+router.use("/allMusicLinks", historyRoutes);
+router.use("/schedule", scheduleRoutes);
+router.use("/notification", notificationRoutes);
+router.get("/audit", manage, AuditController.list);
+router.get("/users", Users.list);
+router.get("/users/all", manage, Users.list);
+router.post("/users/me/presence", Users.presence);
+router.get("/users/:id", Users.getById);
+router.put("/users/:id", manage, Users.update);
+router.patch("/users/:id", manage, Users.update);
+router.delete("/users/:id", manage, Users.remove);
+export default router;

@@ -1,0 +1,15 @@
+{
+  "indexes": [
+    { "collectionGroup": "allMusicLinks", "queryScope": "COLLECTION", "fields": [
+      { "fieldPath": "nameSearch", "arrayConfig": "CONTAINS" },
+      { "fieldPath": "createdAt", "order": "DESCENDING" }
+    ] }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "members", "fieldPath": "userId", "indexes": [
+      { "order": "ASCENDING", "queryScope": "COLLECTION" },
+      { "order": "DESCENDING", "queryScope": "COLLECTION" },
+      { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+    ] }
+  ]
+}

@@ -1,11 +1,26 @@
 import { NextFunction, Request, Response } from "express";
 import { admin, db } from "../repositories/firebaseService";
+import { getOrganizationCollection } from "../repositories/organizationData";
 
 const AUDITED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const MAX_DEPTH = 2;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 25;
 const MAX_STRING_LENGTH = 500;
+const REDACTED_VALUE = "[REDACTED]";
+const SENSITIVE_KEYS = new Set([
+  "authorization",
+  "password",
+  "passwordhash",
+  "token",
+  "tokenhash",
+  "idtoken",
+  "firebasecustomtoken",
+  "refreshtoken",
+  "accesstoken",
+  "invitationpath",
+  "invitationlink",
+]);
 
 type AuditSummary = string | number | boolean | null | AuditSummary[] | { [key: string]: AuditSummary };
 
@@ -21,13 +36,33 @@ function normalizeRoles(user: Request["user"]): string[] {
   return rawRoles.map((role) => String(role));
 }
 
-function summarizeValue(value: unknown, depth = 0): AuditSummary {
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEYS.has(key.replace(/[_-]/g, "").toLowerCase());
+}
+
+function redactSecretsInPath(path: string): string {
+  return path.replace(
+    /(\/invitations\/[^/?#]+\/)([^/?#]+)(?=\/(?:preview|accept)(?:[/?#]|$))/gi,
+    `$1${REDACTED_VALUE}`
+  );
+}
+
+function getOrganizationIdFromPath(path: string): string | null {
+  const match = path.match(/^\/organizations\/([^/?#]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+function summarizeValue(value: unknown, depth = 0, key = ""): AuditSummary {
+  if (key && isSensitiveKey(key)) {
+    return REDACTED_VALUE;
+  }
+
   if (value === null || value === undefined) {
     return null;
   }
 
   if (typeof value === "string") {
-    const text = value as string;
+    const text = redactSecretsInPath(value as string).replace(/(\/invite\/[^/?#]+\/)[^/?#\s]+/gi, `$1${REDACTED_VALUE}`);
     return text.length > MAX_STRING_LENGTH ? `${text.slice(0, MAX_STRING_LENGTH)}...` : text;
   }
 
@@ -58,7 +93,7 @@ function summarizeValue(value: unknown, depth = 0): AuditSummary {
     const entries = Object.entries(objectValue).slice(0, MAX_OBJECT_KEYS);
 
     return entries.reduce((acc, [key, nestedValue]) => {
-      acc[key] = summarizeValue(nestedValue, depth + 1);
+      acc[key] = summarizeValue(nestedValue, depth + 1, key);
       return acc;
     }, {} as { [key: string]: AuditSummary });
   }
@@ -261,11 +296,18 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
   res.on("finish", () => {
     const actor = resolveActor(req);
     const occurredAt = startedAt.toISOString();
-    const summary = buildSummary(req.method, req.originalUrl, res.statusCode, requestPayload, responsePayload ?? null, actor.name);
+    const auditPath = redactSecretsInPath(req.originalUrl);
+    const summary = buildSummary(req.method, auditPath, res.statusCode, requestPayload, responsePayload ?? null, actor.name);
 
-    void db.collection("auditLogs").add({
+    const organizationId = req.organizationId;
+    const auditLogs = organizationId
+      ? getOrganizationCollection(organizationId, "auditLogs")
+      : db.collection("auditLogs");
+
+    void auditLogs.add({
+      organizationId: organizationId ?? null,
       method: req.method,
-      path: req.originalUrl,
+      path: auditPath,
       route: req.baseUrl || null,
       statusCode: res.statusCode,
       actor,

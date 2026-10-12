@@ -1,5 +1,10 @@
 # `schedule-server`
 
+O código agora separa dados por organização e permite contas em vários grupos.
+Consulte [SAAS_SETUP.md](SAAS_SETUP.md) para as rotas atuais, regras do Firebase,
+convites e migração. As rotas globais de dados descritas abaixo são legadas e
+foram substituídas por `/organizations/:organizationId/...`.
+
 Backend em `"Node.js"` com `"Express"` para cuidar de:
 
 - `"login"` e `"cadastro"` de usuários

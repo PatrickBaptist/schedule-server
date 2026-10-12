@@ -1,6 +1,16 @@
 import { Request, Response } from "express";
-import { admin, db } from "../repositories/firebaseService";
+import { admin } from "../repositories/firebaseService";
 import { UserRole } from "../enums/UserRoles";
+import { getOrganizationCollection } from "../repositories/organizationData";
+
+function getNotificationCollections(req: Request) {
+  const organizationId = req.organizationId || req.params.organizationId;
+  if (!organizationId) throw new Error("Organização obrigatória");
+  return {
+    notifications: getOrganizationCollection(organizationId, "notifications"),
+    warnings: getOrganizationCollection(organizationId, "warnings"),
+  };
+}
 
 export const getNotification = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -11,7 +21,7 @@ export const getNotification = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const docRef = db.collection('notifications').doc('current');
+    const docRef = getNotificationCollections(req).notifications.doc('current');
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
@@ -33,7 +43,7 @@ export const postNotification = async (req: Request, res: Response): Promise<voi
 
     const firestoreTimestamp = admin.firestore.Timestamp.fromDate(new Date());
 
-    await db.collection("notifications").doc("current").set({
+    await getNotificationCollections(req).notifications.doc("current").set({
       text: text.trim(),
       timestamp: firestoreTimestamp
     });
@@ -55,7 +65,7 @@ export const getWarnings = async (req: Request, res: Response) => {
       return;
     }
 
-    const docRef = db.collection("warnings").doc("current");
+    const docRef = getNotificationCollections(req).warnings.doc("current");
     const docSnap = await docRef.get();
 
     if (!docSnap.exists) {
@@ -76,7 +86,7 @@ export const postWarnings = async (req: Request, res: Response) => {
 
     const firestoreTimestamp = admin.firestore.Timestamp.fromDate(new Date());
 
-    await db.collection("warnings").doc("current").set({
+    await getNotificationCollections(req).warnings.doc("current").set({
       text: text?.trim(),
       timestamp: firestoreTimestamp,
     });

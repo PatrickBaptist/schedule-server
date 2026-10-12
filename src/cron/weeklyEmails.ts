@@ -1,13 +1,17 @@
-import { UserService } from "../services/usersService";
+import { forEachActiveOrganization, getEnabledOrganizationUsers } from "../services/organizationJobs";
 import { EmailService } from "../services/emailService";
 import { MusicService } from "../services/musicService";
 
 export async function runWeeklyMusicJob() {
-  const userService = new UserService();
-  const emailService = new EmailService();
-  const musicService = new MusicService();
+  await forEachActiveOrganization(runForOrganization);
+}
 
-  const users = await userService.getAllUsers();
+async function runForOrganization(organizationId: string) {
+
+  const emailService = new EmailService();
+  const musicService = new MusicService(organizationId);
+
+  const users = await getEnabledOrganizationUsers(organizationId);
   if (users.length === 0) return;
 
   const musicLinks = await musicService.fetchMusicLinks();

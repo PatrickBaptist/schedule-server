@@ -2,8 +2,11 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { AuthenticatedUser } from "../models/authenticated";
 import { db } from "../repositories/firebaseService";
+import { UserStatus } from "../enums/UserStatus";
 
 export function authenticateToken(req: Request, res: Response, next: NextFunction) {
+  // Nested organization routes have already checked the session and membership.
+  if (req.organizationId && req.membership && req.user) { next(); return; }
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
@@ -25,20 +28,23 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
         const userId = jwtUser.userId || jwtUser.id;
 
         if (!userId) {
-          req.user = jwtUser;
-          next();
+          res.status(401).json({ message: "Token sem identificação de usuário" });
           return;
         }
 
         const userDoc = await db.collection("users").doc(userId).get();
 
         if (!userDoc.exists) {
-          req.user = jwtUser;
-          next();
+          res.status(401).json({ message: "Usuário não encontrado" });
           return;
         }
 
         const userData = userDoc.data();
+        if (userData?.status !== UserStatus.Enabled) {
+          res.status(403).json({ message: "Usuário não está habilitado" });
+          return;
+        }
+
         const roles = Array.isArray(userData?.roles) ? userData.roles : [];
 
         req.user = {
@@ -53,9 +59,9 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
         };
 
         next();
-      } catch {
-        req.user = jwtUser;
-        next();
+      } catch (error) {
+        console.error("Erro ao validar usuário autenticado:", error);
+        res.status(503).json({ message: "Não foi possível validar a sessão" });
       }
     })();
   });

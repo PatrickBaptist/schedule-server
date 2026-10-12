@@ -4,14 +4,12 @@ import { WorshipUser } from "../models/user";
 import { admin, db } from "../repositories/firebaseService";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { EmailService } from "./emailService";
 import { UserRole } from "../enums/UserRoles";
 import { formatPhone } from "../utils/formatPhone";
 import { resizeGooglePhotoURL } from "../utils/resizeGooglePhotoURL";
 
 export class AuthService {
     private collection;
-    private emailService = new EmailService();
 
     constructor() {
         this.collection = db.collection("users");
@@ -36,7 +34,8 @@ export class AuthService {
     }
 
     async login(dto: LoginUserDto) {
-        const { email, password } = dto;
+        const email = dto.email?.trim().toLowerCase();
+        const password = dto.password;
 
         if (!email || !password) {
             throw new Error("Email e senha obrigatorios");
@@ -70,6 +69,7 @@ export class AuthService {
 
         return {
             token,
+            firebaseCustomToken: await admin.auth().createCustomToken(userDoc.id),
             user: {
                 id: userDoc.id,
                 name: userData.name,
@@ -105,7 +105,7 @@ export class AuthService {
 
         let userId = "";
         let userRoles: string[] = [];
-        let userStatus: UserStatus = UserStatus.Pending;
+        let userStatus: UserStatus = UserStatus.Enabled;
         let responsePhotoURL = photoURL;
         let message = "Usuário cadastrado com sucesso";
 
@@ -117,6 +117,7 @@ export class AuthService {
                 ? existingUser.roles.map((role) => String(role))
                 : [UserRole.Guest];
             userStatus = (existingUser.status as UserStatus) || UserStatus.Pending;
+            if (userStatus !== UserStatus.Enabled) throw new Error("Conta não habilitada");
             responsePhotoURL = resizeGooglePhotoURL(existingUser.photoURL ?? photoURL);
             const photoURLToSave = photoURL ?? resizeGooglePhotoURL(existingUser.photoURL ?? null);
             if (userStatus === UserStatus.Enabled) {
@@ -142,7 +143,7 @@ export class AuthService {
                 passwordHash: "",
                 roles: [],
                 rolesLower: [],
-                status: UserStatus.Pending,
+                status: UserStatus.Enabled,
                 phone: null,
                 joinedAt: now,
                 photoURL,
@@ -168,6 +169,7 @@ export class AuthService {
 
         return {
             token,
+            firebaseCustomToken: await admin.auth().createCustomToken(userId),
             user: {
                 id: userId,
                 name,
@@ -184,11 +186,9 @@ export class AuthService {
         const {
             name,
             nickname,
-            email,
+            email: rawEmail,
             birthDate,
             password,
-            roles,
-            status = UserStatus.Pending,
             phone,
             photoURL,
             joinedAt,
@@ -198,8 +198,14 @@ export class AuthService {
             canLeadWorship = false,
         } = dto;
 
-        if (!name || !email || !birthDate || !password || !roles || !Array.isArray(roles) || roles.length === 0) {
-            throw new Error("Campos obrigatorios: nome, email, data de aniversario, senha e funcao");
+        const email = rawEmail?.trim().toLowerCase();
+        const roles: string[] = [];
+        const status = UserStatus.Enabled;
+        if (!name || !email || !birthDate || !password) {
+            throw new Error("Campos obrigatorios: nome, email, data de aniversario e senha");
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) {
+            throw new Error("Informe um email valido e uma senha de pelo menos 8 caracteres");
         }
 
         const userSnap = await this.collection.where("email", "==", email).get();
@@ -231,27 +237,6 @@ export class AuthService {
 
         const docRef = await this.collection.add(newUser);
 
-        const leadersSnap = await this.collection
-            .where("rolesLower", "array-contains-any", [UserRole.Admin, UserRole.Leader])
-            .get();
-
-        const emailsToNotify = leadersSnap.docs
-            .map((doc) => doc.data().email)
-            .filter(Boolean);
-
-        try {
-            await this.emailService.sendLeaderNotification({
-                to: emailsToNotify,
-                subject: "Novo usuario aguardando aprovacao",
-                html: `
-                <h2>Novo cadastro realizado</h2>
-                <p>O usuario <strong>${name}(${nickname})</strong> foi cadastrado e esta aguardando aprovacao.</p>
-                `,
-            });
-        } catch (error) {
-            console.error("Erro ao enviar email de notificacao:", error);
-        }
-
         return { message: "Usuario cadastrado com sucesso", id: docRef.id };
     }
 
@@ -279,7 +264,9 @@ export class AuthService {
             email: userData?.email,
             nickname: userData?.nickname,
             birthDate: userData?.birthDate,
-            roles: userData?.roles,
+            roles: [],
+            status: userData?.status,
+            firebaseCustomToken: await admin.auth().createCustomToken(userDoc.id),
             phone: userData?.phone,
             photoURL: userData?.photoURL,
         };
@@ -321,6 +308,7 @@ export class AuthService {
 
         return {
             token,
+            firebaseCustomToken: await admin.auth().createCustomToken(userDoc.id),
             user: {
                 id: userDoc.id,
                 name: userData.name,

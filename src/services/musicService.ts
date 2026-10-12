@@ -1,5 +1,5 @@
-import { db } from "../repositories/firebaseService";
 import { compareMusicLinksByDateAndOrder } from "../utils/musicLinks";
+import { getOrganizationCollection } from "../repositories/organizationData";
 
 export type MusicLinkData = {
   id: string;
@@ -19,8 +19,8 @@ export type MusicLinkData = {
 export class MusicService {
   private collection;
 
-  constructor() {
-    this.collection = db.collection("musicLinks");
+  constructor(organizationId: string) {
+    this.collection = getOrganizationCollection(organizationId, "musicLinks");
   }
 
   async fetchMusicLinks(): Promise<MusicLinkData[]> {
