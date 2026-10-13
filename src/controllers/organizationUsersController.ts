@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { admin, db } from "../repositories/firebaseService";
 import { getOrganizationRef } from "../repositories/organizationData";
-import { UserRole } from "../enums/UserRoles";
+import { ScheduleRoleService } from "../services/scheduleRoleService";
 
 type MembershipData = {
   userId?: string;
@@ -167,8 +167,11 @@ export class OrganizationUsersController {
       const musicalRoles = Array.isArray(req.body?.musicalRoles)
         ? req.body.musicalRoles
         : Array.isArray(req.body?.roles) ? req.body.roles : undefined;
-      const allowedMusicalRoles = Object.values(UserRole).filter(role => ![UserRole.Admin, UserRole.Leader, UserRole.Guest].includes(role));
-      if (musicalRoles?.some((role: unknown) => !allowedMusicalRoles.includes(role as UserRole))) {
+      const scheduleRoles = musicalRoles === undefined
+        ? []
+        : await new ScheduleRoleService().list(req.organizationId!);
+      const allowedMusicalRoles = new Set(scheduleRoles.map(role => role.id));
+      if (musicalRoles?.some((role: unknown) => typeof role !== "string" || !allowedMusicalRoles.has(role))) {
         res.status(400).json({ message: "Função musical inválida. Administração é definida separadamente." });
         return;
       }

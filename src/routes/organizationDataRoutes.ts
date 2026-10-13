@@ -9,6 +9,7 @@ import scheduleRoutes from "./scheduleRoutes";
 import notificationRoutes from "./notificationRoutes";
 import { AuditController } from "../controllers/auditController";
 import { OrganizationUsersController as Users } from "../controllers/organizationUsersController";
+import { ScheduleRolesController as ScheduleRoles } from "../controllers/scheduleRolesController";
 
 const router = Router({ mergeParams: true });
 router.use(authenticateToken, requireOrganizationMembership);
@@ -19,6 +20,9 @@ router.use("/schedule", scheduleRoutes);
 router.use("/notification", notificationRoutes);
 router.get("/audit", manage, AuditController.list);
 router.get("/users", Users.list);
+router.get("/schedule-roles", ScheduleRoles.list);
+router.post("/schedule-roles", manage, ScheduleRoles.create);
+router.patch("/schedule-roles/:roleId", manage, ScheduleRoles.update);
 router.get("/users/all", manage, Users.list);
 router.post("/users/me/presence", Users.presence);
 router.get("/users/:id", Users.getById);

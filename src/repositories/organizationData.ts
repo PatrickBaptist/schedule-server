@@ -9,6 +9,7 @@ export const ORGANIZATION_DATA_COLLECTIONS = [
   "notifications",
   "warnings",
   "auditLogs",
+  "scheduleRoles",
 ] as const;
 
 export type OrganizationDataCollection = typeof ORGANIZATION_DATA_COLLECTIONS[number];

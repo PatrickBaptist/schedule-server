@@ -17,7 +17,9 @@ function reference(path: string): any {
     parent: { parent: path.startsWith("organizations/") && path.split("/").length > 2 ? reference(path.split("/").slice(0, 2).join("/")) : null },
     collection: (name: string) => collection(`${path}/${name}`),
     get: async () => snapshot(path),
-    set: async (value: any) => { documents.set(path, value); },
+    set: async (value: any, options?: { merge?: boolean }) => {
+      documents.set(path, options?.merge ? { ...documents.get(path), ...value } : value);
+    },
   };
 }
 let generatedId = 0;
@@ -40,13 +42,27 @@ let transactionQueue: Promise<unknown> = Promise.resolve();
 const fakeDb = {
   collection,
   getAll: async (...refs: any[]) => Promise.all(refs.map(ref => ref.get())),
+  batch: () => {
+    const writes: Array<() => void> = [];
+    return {
+      set: (ref: any, data: any, options?: { merge?: boolean }) => writes.push(() => documents.set(
+        ref.path,
+        options?.merge ? { ...documents.get(ref.path), ...data } : data
+      )),
+      delete: (ref: any) => writes.push(() => documents.delete(ref.path)),
+      commit: async () => { writes.forEach(write => write()); },
+    };
+  },
   runTransaction: (work: (transaction: any) => Promise<any>) => {
     const run = transactionQueue.then(async () => {
       const writes: Array<() => void> = [];
       const result = await work({
         get: (ref: any) => ref.get(),
         create: (ref: any, data: any) => { if (documents.has(ref.path)) throw new Error("already exists"); writes.push(() => documents.set(ref.path, data)); },
-        set: (ref: any, data: any) => writes.push(() => documents.set(ref.path, data)),
+        set: (ref: any, data: any, options?: { merge?: boolean }) => writes.push(() => documents.set(
+          ref.path,
+          options?.merge ? { ...documents.get(ref.path), ...data } : data
+        )),
         update: (ref: any, data: any) => writes.push(() => documents.set(ref.path, { ...documents.get(ref.path), ...data })),
       });
       writes.forEach(write => write()); return result;
@@ -58,6 +74,7 @@ require.cache[require.resolve("../repositories/firebaseService")] = {
   exports: { db: fakeDb, admin: { firestore: { Timestamp: { fromDate: (date: Date) => date } } } },
 } as any;
 const { OrganizationService } = require("../services/organizationService");
+const { ScheduleRoleService } = require("../services/scheduleRoleService");
 const { requireOrganizationMembership } = require("../middlewares/requireOrganizationMembership");
 const { MusicService } = require("../services/musicService");
 const { auditMiddleware } = require("../middlewares/auditMiddleware");
@@ -102,6 +119,31 @@ test("invitation is email-bound, hashed, single-use and idempotent", async () =>
   assert.equal(accepted.membership.managementRole, "member");
   assert.deepEqual(accepted.membership.musicalRoles, ["vocal"]);
   assert.equal((await service.acceptInvitation("group-a", result.token, "person")).alreadyAccepted, true);
+});
+
+test("organization can create and deactivate a custom schedule role", async () => {
+  seed();
+  const roles = new ScheduleRoleService();
+  const defaults = await roles.list("a");
+  assert.equal(defaults.some((role: any) => role.id === "lighting"), true);
+  const sax = await roles.create("a", "Saxofonista");
+  assert.equal(sax.id, "saxofonista");
+  documents.get("organizations/a/members/owner").musicalRoles = [sax.id];
+  const disabled = await roles.update("a", sax.id, { active: false });
+  assert.equal(disabled.active, false);
+  assert.deepEqual(documents.get("organizations/a/members/owner").musicalRoles, []);
+  assert.equal((await roles.list("a")).find((role: any) => role.id === sax.id)?.active, false);
+});
+
+test("invitation accepts a custom active schedule role", async () => {
+  seed();
+  await new ScheduleRoleService().create("a", "Saxofonista");
+  const result = await new OrganizationService().createInvitation("a", "owner", {
+    email: "person@example.test",
+    musicalRoles: ["saxofonista"],
+    expiresAt: new Date(Date.now() + 86400000).toISOString(),
+  });
+  assert.deepEqual(result.invitation.musicalRoles, ["saxofonista"]);
 });
 
 test("leaders cannot grant admin; revoked and expired invites cannot be used", async () => {
@@ -157,6 +199,23 @@ test("HTTP routes preserve tenant context and reject cross-organization reads", 
     assert.equal(anonymous.status, 401);
     const members = await fetch(`${url}/organizations/a/users`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(members.status, 200); assert.deepEqual((await members.json()).map((user: any) => user.id), ["owner"]);
+    const defaultRoles = await fetch(`${url}/organizations/a/schedule-roles`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(defaultRoles.status, 200); assert.equal((await defaultRoles.json()).some((role: any) => role.id === "datashow"), true);
+    const createdRole = await fetch(`${url}/organizations/a/schedule-roles`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Saxofonista" }) });
+    assert.equal(createdRole.status, 201); assert.equal((await createdRole.json()).id, "saxofonista");
+    const dynamicSchedule = await fetch(`${url}/organizations/a/schedule/special-schedule`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ schedules: [{ evento: "Culto", data: "2026-10-18", startTime: "19:00", musicosIds: {}, assignments: { saxofonista: ["owner"], "extra-flauta": ["Convidado"] }, roleLabels: { "extra-flauta": "Flautista" } }] }) });
+    assert.equal(dynamicSchedule.status, 201);
+    const dynamicScheduleId = (await dynamicSchedule.json()).schedules[0].id;
+    documents.get("organizations/a/members/owner").musicalRoles = ["saxofonista"];
+    const generatedSchedule = await fetch(`${url}/organizations/a/schedule/special-schedule/generate`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ scheduleIds: [dynamicScheduleId], dates: [], mode: "replace" }) });
+    assert.equal(generatedSchedule.status, 200);
+    const listedSchedules = await fetch(`${url}/organizations/a/schedule/special-schedule`, { headers: { Authorization: `Bearer ${token}` } });
+    const listedDynamicSchedule = (await listedSchedules.json())[0];
+    assert.deepEqual(listedDynamicSchedule.assignments.saxofonista, ["owner"]);
+    assert.deepEqual(listedDynamicSchedule.assignments["extra-flauta"], ["Convidado"]);
+    assert.equal(listedDynamicSchedule.roleLabels["extra-flauta"], "Flautista");
+    const disabledRole = await fetch(`${url}/organizations/a/schedule-roles/saxofonista`, { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ active: false }) });
+    assert.equal(disabledRole.status, 200); assert.equal((await disabledRole.json()).active, false);
     const otherOrganizationWrite = await fetch(`${url}/organizations/b/musicList/song`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
     assert.equal(otherOrganizationWrite.status, 403);
     const demoteOwner = await fetch(`${url}/organizations/a/users/owner`, { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ managementRole: "member" }) });

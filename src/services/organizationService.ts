@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "crypto";
 import { CreateInvitationDto, CreateOrganizationDto } from "../dtos/organization.dto";
-import { UserRole } from "../enums/UserRoles";
 import { UserStatus } from "../enums/UserStatus";
 import {
   InvitationStatus,
@@ -12,6 +11,7 @@ import {
   OrganizationStatus,
 } from "../models/organization";
 import { db } from "../repositories/firebaseService";
+import { ScheduleRoleService } from "./scheduleRoleService";
 
 const ORGANIZATIONS_COLLECTION = "organizations";
 const ORGANIZATION_SLUGS_COLLECTION = "organizationSlugs";
@@ -23,12 +23,6 @@ const ALLOWED_INVITATION_ROLES = new Set<OrganizationManagementRole>([
   OrganizationManagementRole.Leader,
   OrganizationManagementRole.Member,
 ]);
-
-const ALLOWED_MUSICAL_ROLES = new Set<string>(
-  Object.values(UserRole).filter(
-    (role) => ![UserRole.Admin, UserRole.Guest, UserRole.Leader].includes(role)
-  )
-);
 
 export class OrganizationServiceError extends Error {
   constructor(message: string, public readonly statusCode = 400) {
@@ -127,7 +121,7 @@ function validateManagementRole(value: unknown): Exclude<OrganizationManagementR
   return role as Exclude<OrganizationManagementRole, OrganizationManagementRole.Owner>;
 }
 
-function validateMusicalRoles(value: unknown): string[] {
+async function validateMusicalRoles(organizationId: string, value: unknown): Promise<string[]> {
   if (value === undefined || value === null) {
     return [];
   }
@@ -142,7 +136,9 @@ function validateMusicalRoles(value: unknown): string[] {
     )
   );
 
-  if (roles.some((role) => !role || !ALLOWED_MUSICAL_ROLES.has(role))) {
+  const scheduleRoles = await new ScheduleRoleService().list(organizationId);
+  const allowedRoles = new Set(scheduleRoles.filter(role => role.active).map(role => role.id));
+  if (roles.some((role) => !role || !allowedRoles.has(role))) {
     throw new OrganizationServiceError("Uma ou mais funções musicais são inválidas");
   }
 
@@ -304,7 +300,7 @@ export class OrganizationService {
   ) {
     const email = normalizeEmail(dto.email);
     const managementRole = validateManagementRole(dto.managementRole);
-    const musicalRoles = validateMusicalRoles(dto.musicalRoles);
+    const musicalRoles = await validateMusicalRoles(organizationId, dto.musicalRoles);
     const expiresAt = validateExpiration(dto.expiresAt);
     const token = randomBytes(32).toString("base64url");
     const tokenHash = hashToken(token);

@@ -22,6 +22,8 @@ import {
   validateScheduleDate,
   validateSelectedDates,
 } from "../services/scheduleGeneration";
+import { ScheduleRoleService } from "../services/scheduleRoleService";
+import { ScheduleRoleDefinition } from "../models/scheduleRole";
 
 type ScheduleMusicos = MusicosIds;
 
@@ -231,6 +233,8 @@ function normalizeSpecialSchedule(raw: unknown, id?: string, lookup?: UserLookup
     startTime,
     ...(outfitColor ? { outfitColor } : {}),
     musicosIds: toEventMusicosIds(musicos, outfitColor || undefined),
+    assignments: normalizeAssignments(record.assignments, lookup),
+    roleLabels: normalizeRoleLabels(record.roleLabels),
     ...(typeof record.createdAt === "string" ? { createdAt: record.createdAt } : {}),
     ...(typeof record.updatedAt === "string" ? { updatedAt: record.updatedAt } : {}),
     ...(typeof record.legacySourceId === "string" ? { legacySourceId: record.legacySourceId } : {}),
@@ -275,6 +279,8 @@ function parseSpecialScheduleInput(raw: unknown, index: number): ScheduleEvent {
     ? record.outfitColor
     : typeof nestedColor === "string" ? nestedColor : undefined;
   const musicos = normalizeMusicos(idsPayload);
+  const assignments = normalizeAssignments(record.assignments);
+  const roleLabels = normalizeRoleLabels(record.roleLabels);
 
   return {
     ...(typeof record.id === "string" ? { id: record.id.trim() } : {}),
@@ -283,6 +289,8 @@ function parseSpecialScheduleInput(raw: unknown, index: number): ScheduleEvent {
     startTime,
     ...(outfitColor !== undefined ? { outfitColor } : {}),
     musicosIds: toEventMusicosIds(musicos, outfitColor),
+    assignments,
+    roleLabels,
   };
 }
 
@@ -344,6 +352,24 @@ function normalizeRoleList(value: unknown, lookup?: UserLookup): string[] {
   }
 
   return [];
+}
+
+function normalizeAssignments(value: unknown, lookup?: UserLookup): Record<string, string[]> {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([roleId]) => /^[a-z0-9][a-z0-9-]{0,79}$/.test(roleId))
+      .map(([roleId, members]) => [roleId, normalizeRoleList(members, lookup)])
+  );
+}
+
+function normalizeRoleLabels(value: unknown): Record<string, string> {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([roleId, label]) => roleId.startsWith("extra-") && typeof label === "string" && label.trim().length > 0 && label.trim().length <= 60)
+      .map(([roleId, label]) => [roleId, (label as string).trim()])
+  );
 }
 
 function normalizeMusicos(raw: unknown, lookup?: UserLookup): ScheduleMusicos {
@@ -1089,7 +1115,8 @@ function buildSpecialScheduleTeams(
   users: ActiveUser[],
   selectedSchedules: ScheduleEvent[],
   lockedSchedules: ScheduleEvent[],
-  mode: ScheduleMode
+  mode: ScheduleMode,
+  activeRoles: ScheduleRoleDefinition[]
 ): ScheduleEvent[] {
   const lockedHistory: HistoryEntry[] = lockedSchedules.map((schedule) => ({
     date: schedule.data,
@@ -1102,6 +1129,21 @@ function buildSpecialScheduleTeams(
       }))
     : [];
   const { roleCounts, totalCounts } = buildHistoryMaps([...lockedHistory, ...manualHistory]);
+  const customRoles = activeRoles.filter(role => !role.legacyKey);
+  const customRoleCounts = new Map(customRoles.map(role => [role.id, new Map<string, number>()]));
+  const assignmentHistory = [
+    ...lockedSchedules,
+    ...(mode === "fill-empty" ? selectedSchedules : []),
+  ];
+  for (const historical of assignmentHistory) {
+    for (const role of customRoles) {
+      for (const userId of historical.assignments?.[role.id] ?? []) {
+        const counts = customRoleCounts.get(role.id)!;
+        counts.set(userId, (counts.get(userId) ?? 0) + 1);
+        if (users.some(user => user.id === userId)) totalCounts.set(userId, (totalCounts.get(userId) ?? 0) + 1);
+      }
+    }
+  }
   const ordered = [...selectedSchedules].sort((a, b) => {
     const dateComparison = a.data.localeCompare(b.data);
     if (dateComparison !== 0) {
@@ -1152,9 +1194,41 @@ function buildSpecialScheduleTeams(
       totalCounts.set(userId, (totalCounts.get(userId) ?? 0) + 1);
     }
 
+    const assignments: Record<string, string[]> = mode === "fill-empty"
+      ? Object.fromEntries(Object.entries(schedule.assignments ?? {}).map(([roleId, ids]) => [roleId, [...ids]]))
+      : Object.fromEntries(Object.entries(schedule.assignments ?? {}).filter(([roleId]) => schedule.roleLabels?.[roleId]).map(([roleId, ids]) => [roleId, [...ids]]));
+    const usedPeople = new Set(DEFAULT_ROLE_ORDER.flatMap(role => generatedIds[role]));
+    for (const ids of Object.values(assignments)) ids.forEach(id => usedPeople.add(id));
+
+    for (const role of activeRoles) {
+      if (role.legacyKey) {
+        assignments[role.id] = [...generatedIds[role.legacyKey as ScheduleRole]];
+        continue;
+      }
+      if ((assignments[role.id]?.length ?? 0) > 0) continue;
+      const counts = customRoleCounts.get(role.id)!;
+      const candidates = users
+        .filter(user => user.roles.includes(role.id) && !usedPeople.has(user.id))
+        .map(user => ({
+          user,
+          roleCount: counts.get(user.id) ?? 0,
+          totalCount: totalCounts.get(user.id) ?? 0,
+          flexibility: customRoles.filter(item => user.roles.includes(item.id)).length,
+        }))
+        .sort((a, b) => a.roleCount - b.roleCount || a.totalCount - b.totalCount || a.flexibility - b.flexibility || getUserLabel(a.user).localeCompare(getUserLabel(b.user), "pt-BR"));
+      const chosen = candidates[0]?.user;
+      assignments[role.id] = chosen ? [chosen.id] : [];
+      if (chosen) {
+        usedPeople.add(chosen.id);
+        counts.set(chosen.id, (counts.get(chosen.id) ?? 0) + 1);
+        totalCounts.set(chosen.id, (totalCounts.get(chosen.id) ?? 0) + 1);
+      }
+    }
+
     return {
       ...schedule,
       musicosIds: toEventMusicosIds(generatedIds, schedule.outfitColor),
+      assignments,
     };
   });
 }
@@ -1188,6 +1262,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
       res.status(409).json({ message: "Nao foi possivel gerar as escalas: nenhum usuario ativo encontrado." });
       return;
     }
+    const activeScheduleRoles = (await new ScheduleRoleService().list(organizationId)).filter(role => role.active);
 
     const selectedIdSet = new Set(scheduleIds);
     const createdAt = new Date().toISOString();
@@ -1223,7 +1298,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
         ...newSchedules,
       ];
       const locked = allSchedules.filter((schedule) => !schedule.id || !selectedIdSet.has(schedule.id));
-      const generated = buildSpecialScheduleTeams(users, selected, locked, mode);
+      const generated = buildSpecialScheduleTeams(users, selected, locked, mode, activeScheduleRoles);
       const updatedAt = new Date().toISOString();
 
       for (const schedule of generated) {
@@ -1237,6 +1312,7 @@ export const generateSpecialSchedules = async (req: Request, res: Response): Pro
         } else {
           transaction.set(docRef, {
             musicosIds: schedule.musicosIds,
+            assignments: schedule.assignments ?? {},
             updatedAt,
           }, { merge: true });
         }
@@ -1401,6 +1477,18 @@ export const postSpecialSchedules = async (req: Request, res: Response): Promise
     const { lookup } = await loadActiveUsersAndLookup(organizationId);
     if (parsedSchedules.some(schedule => SCHEDULE_ROLES.some(role => schedule.musicosIds[role].some(id => !lookup.byId.has(id) && !["Convidado", "Todos cantam"].includes(id))))) {
       res.status(400).json({ message: "A escala só pode incluir membros ativos desta organização" });
+      return;
+    }
+    const scheduleRoles = await new ScheduleRoleService().list(organizationId);
+    const allowedRoleIds = new Set(scheduleRoles.map(role => role.id));
+    const invalidAssignment = parsedSchedules.some(schedule =>
+      Object.entries(schedule.assignments ?? {}).some(([roleId, memberIds]) =>
+        (!allowedRoleIds.has(roleId) && !schedule.roleLabels?.[roleId])
+        || memberIds.some(id => !lookup.byId.has(id) && !["Convidado", "Todos cantam"].includes(id))
+      )
+    );
+    if (invalidAssignment) {
+      res.status(400).json({ message: "A escala possui função inválida ou pessoa que não é membro ativo desta organização" });
       return;
     }
     const idsToUpdate = parsedSchedules.flatMap((schedule) => schedule.id ? [schedule.id] : []);
