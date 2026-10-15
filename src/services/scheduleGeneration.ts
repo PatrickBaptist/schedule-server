@@ -31,6 +31,8 @@ export interface ScheduleEvent {
   data: string;
   startTime?: string | null;
   outfitColor?: string;
+  address?: string;
+  description?: string;
   musicosIds: EventMusicosIds;
   assignments?: Record<string, string[]>;
   roleLabels?: Record<string, string>;

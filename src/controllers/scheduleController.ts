@@ -232,6 +232,8 @@ function normalizeSpecialSchedule(raw: unknown, id?: string, lookup?: UserLookup
     data: typeof record.data === "string" ? record.data : "",
     startTime,
     ...(outfitColor ? { outfitColor } : {}),
+    ...(typeof record.address === "string" ? { address: record.address } : {}),
+    ...(typeof record.description === "string" ? { description: record.description } : {}),
     musicosIds: toEventMusicosIds(musicos, outfitColor || undefined),
     assignments: normalizeAssignments(record.assignments, lookup),
     roleLabels: normalizeRoleLabels(record.roleLabels),
@@ -265,6 +267,14 @@ function parseSpecialScheduleInput(raw: unknown, index: number): ScheduleEvent {
     throw new Error(`A escala ${index + 1} possui outfitColor invalido.`);
   }
 
+  if (record.address !== undefined && typeof record.address !== "string") {
+    throw new Error(`A escala ${index + 1} possui endereço inválido.`);
+  }
+
+  if (record.description !== undefined && typeof record.description !== "string") {
+    throw new Error(`A escala ${index + 1} possui descrição inválida.`);
+  }
+
   const idsPayload = record["músicosIds"] ?? record.musicosIds;
   if (idsPayload === undefined || !isRecord(idsPayload)) {
     throw new Error(`A escala ${index + 1} deve informar musicosIds.`);
@@ -288,6 +298,8 @@ function parseSpecialScheduleInput(raw: unknown, index: number): ScheduleEvent {
     data,
     startTime,
     ...(outfitColor !== undefined ? { outfitColor } : {}),
+    ...(typeof record.address === "string" && record.address.trim() ? { address: record.address.trim() } : {}),
+    ...(typeof record.description === "string" && record.description.trim() ? { description: record.description.trim() } : {}),
     musicosIds: toEventMusicosIds(musicos, outfitColor),
     assignments,
     roleLabels,
