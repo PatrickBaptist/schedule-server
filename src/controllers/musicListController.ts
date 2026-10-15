@@ -6,6 +6,8 @@ import { UserRole } from "../enums/UserRoles";
 import { MusicService } from "../services/musicService";
 import { isValidScheduleDate } from "../utils/musicLinks";
 import { getOrganizationCollection } from "../repositories/organizationData";
+import { EmailService } from "../services/emailService";
+import { getEnabledOrganizationUsers } from "../services/organizationJobs";
 
 const normalizeName = (name: string) =>
   removeAccents(name.toLowerCase()).replace(/[^a-z0-9\s]/g, "");
@@ -32,6 +34,94 @@ export const getMusicLinks = async (req: Request, res: Response): Promise<void> 
   } catch (error) {
     console.error("Erro ao buscar músicas:", error);
     res.status(500).json({ message: "Erro ao buscar músicas", error: String(error) });
+  }
+};
+
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
+};
+const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, character => HTML_ESCAPES[character] || character);
+
+export const shareMusicByEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const date = req.body?.date;
+    if (!isValidScheduleDate(date)) {
+      res.status(400).json({ message: "Informe uma data válida no formato AAAA-MM-DD." });
+      return;
+    }
+    if (!process.env.RESEND_API_KEY) {
+      res.status(503).json({ message: "O envio de e-mail não está configurado neste ambiente." });
+      return;
+    }
+
+    const organizationId = getOrganizationId(req);
+    const [schedulesSnapshot, users, allMusic] = await Promise.all([
+      getOrganizationCollection(organizationId, "specialSchedules").where("data", "==", date).get(),
+      getEnabledOrganizationUsers(organizationId),
+      new MusicService(organizationId).fetchMusicLinks(),
+    ]);
+    const assignedIds = new Set<string>();
+    for (const scheduleDoc of schedulesSnapshot.docs) {
+      const data = scheduleDoc.data();
+      const addIdsFrom = (source: unknown) => {
+        if (!source || typeof source !== "object" || Array.isArray(source)) return;
+        for (const assigned of Object.values(source as Record<string, unknown>)) {
+          if (Array.isArray(assigned)) {
+            assigned.forEach(id => { if (typeof id === "string" && id.trim()) assignedIds.add(id.trim()); });
+          }
+        }
+      };
+      addIdsFrom(data.assignments);
+      addIdsFrom(data["músicosIds"] ?? data.musicosIds);
+    }
+
+    if (!assignedIds.size) {
+      res.status(409).json({ message: "Não há usuários escalados para esta data." });
+      return;
+    }
+    const assignedUsers = users.filter(user => assignedIds.has(user.id));
+    if (!assignedUsers.length) {
+      res.status(409).json({ message: "Não encontramos usuários ativos entre os escalados para esta data." });
+      return;
+    }
+    const recipients = [...new Map(assignedUsers
+      .filter(user => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email))
+      .map(user => [user.email.toLowerCase(), { email: user.email }])).values()];
+    if (!recipients.length) {
+      res.status(409).json({ message: "Os usuários escalados não têm e-mail cadastrado." });
+      return;
+    }
+
+    const music = allMusic.filter(item => item.scheduleDate?.slice(0, 10) === date);
+    if (!music.length) {
+      res.status(409).json({ message: "Não há músicas cadastradas para esta data." });
+      return;
+    }
+    const musicByMoment = new Map<string, typeof music>();
+    music.forEach(item => {
+      const moment = item.worshipMoment || "Momento não informado";
+      musicByMoment.set(moment, [...(musicByMoment.get(moment) || []), item]);
+    });
+    const musicListHtml = [...musicByMoment].map(([moment, momentMusic]) =>
+      `<li style="margin-bottom:14px"><strong>${escapeHtml(moment)}</strong><ul style="padding-left:18px">${momentMusic
+        .map(item => `<li style="margin-top:6px">${escapeHtml(item.name)} — Tom: ${escapeHtml(item.cifra || "A definir")}</li>`)
+        .join("")}</ul></li>`
+    ).join("");
+    const dateLabel = new Date(`${date}T12:00:00`).toLocaleDateString("pt-BR");
+    const html = `<div style="font-family:Arial,sans-serif;color:#333;line-height:1.6"><p>Repertório do dia ${escapeHtml(dateLabel)}:</p><ul style="padding-left:18px">${musicListHtml}</ul><p>Acesse o aplicativo para ver links, letras e os demais detalhes.</p></div>`;
+    const result = await new EmailService().sendIndividualNotifications({
+      recipients,
+      subject: `🎶 Repertório do dia ${dateLabel}`,
+      html,
+    });
+    res.status(result.failed ? result.sent ? 207 : 502 : 200).json({
+      message: `E-mails enviados para ${result.sent} pessoa(s).${result.failed ? ` ${result.failed} envio(s) falharam.${result.firstFailure ? ` Motivo: ${result.firstFailure}` : ""}` : ""}${assignedUsers.length > recipients.length ? ` ${assignedUsers.length - recipients.length} pessoa(s) sem e-mail válido foram ignoradas.` : ""}`,
+      skipped: assignedUsers.length - recipients.length,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Erro ao compartilhar repertório por e-mail:", error);
+    res.status(500).json({ message: "Não foi possível enviar o repertório por e-mail." });
   }
 };
 
