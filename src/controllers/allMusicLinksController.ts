@@ -8,6 +8,8 @@ interface MusicLink {
   name: string;
   link?: string | null;
   letter?: string | null;
+  lyricsChords?: string | null;
+  chordSourceKey?: string | null;
   spotify?: string | null;
   cifra?: string | null;
   minister?: string | null;
@@ -103,7 +105,7 @@ export const getAllMusicLinks = async (req: Request, res: Response): Promise<voi
 
 export const addAllMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, link, letter, spotify, cifra, minister } = req.body;
+    const { name, link, letter, lyricsChords, chordSourceKey, spotify, cifra, minister } = req.body;
 
     // Validação do campo obrigatório
     if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -122,6 +124,8 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
       nameSearch: normalizedName,
       link: embedLink,
       letter: letter || null,
+      lyricsChords: lyricsChords || null,
+      chordSourceKey: chordSourceKey || cifra || null,
       spotify: spotify || null,
       cifra: cifra || null,
       minister: minister || null,
@@ -145,7 +149,7 @@ export const addAllMusicLink = async (req: Request, res: Response): Promise<void
 export const updateAllMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { name, link, letter, spotify, cifra, minister } = req.body;
+    const { name, link, letter, lyricsChords, chordSourceKey, spotify, cifra, minister } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -180,6 +184,8 @@ export const updateAllMusicLink = async (req: Request, res: Response): Promise<v
         nameSearch: normalizedName,
         link: embedLink,
         letter,
+        lyricsChords: lyricsChords || null,
+        chordSourceKey: chordSourceKey || cifra || null,
         spotify,
         cifra,
         minister

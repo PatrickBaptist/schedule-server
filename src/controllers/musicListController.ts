@@ -127,7 +127,7 @@ export const shareMusicByEmail = async (req: Request, res: Response): Promise<vo
 
 export const addMusicLink = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, worshipMoment, link, letter, spotify, cifra, description, scheduleDate } = req.body;
+    const { name, worshipMoment, link, letter, lyricsChords, chordSourceKey, spotify, cifra, description, scheduleDate } = req.body;
     const organizationId = getOrganizationId(req);
     const userId = req.user?.userId || req.user?.id;
     if (!userId) {
@@ -206,6 +206,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         worshipMoment: req.body.worshipMoment,
         link: embedLink,
         letter: req.body.letter || null,
+        lyricsChords: req.body.lyricsChords || null,
+        chordSourceKey: req.body.chordSourceKey || req.body.cifra || null,
         spotify: req.body.spotify || null,
         cifra: req.body.cifra || null,
         description: finalDescription,
@@ -220,6 +222,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         worshipMoment: req.body.worshipMoment,
         link: embedLink,
         letter: req.body.letter || null,
+        lyricsChords: req.body.lyricsChords || null,
+        chordSourceKey: req.body.chordSourceKey || req.body.cifra || null,
         spotify: req.body.spotify || null,
         cifra: req.body.cifra || null,
         description: finalDescription,
@@ -260,6 +264,8 @@ export const addMusicLink = async (req: Request, res: Response): Promise<void> =
         nameSearch: normalizedName,
         link: embedLink,
         letter: letter || null,
+        lyricsChords: lyricsChords || null,
+        chordSourceKey: chordSourceKey || cifra || null,
         spotify: spotify || null,
         cifra: cifra || null,
         description: finalDescription,
@@ -290,7 +296,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
   try {
     const { id } = req.params;
     const organizationId = getOrganizationId(req);
-    const { name, worshipMoment, link, letter, spotify, cifra, description, order, ministeredBy, scheduleDate } = req.body;
+    const { name, worshipMoment, link, letter, lyricsChords, chordSourceKey, spotify, cifra, description, order, ministeredBy, scheduleDate } = req.body;
 
     if (!id) {
       res.status(400).json({ message: "Id da musica obrigatório" });
@@ -328,7 +334,7 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
     const finalMinister = ministeredBy || oldData?.minister || null;
 
     // Atualiza o próprio documento
-    await docRef.update({ name, link: embedLink, worshipMoment, letter, spotify, cifra, description, order, minister: finalMinister, scheduleDate });
+    await docRef.update({ name, link: embedLink, worshipMoment, letter, lyricsChords: lyricsChords || null, chordSourceKey: chordSourceKey || cifra || null, spotify, cifra, description, order, minister: finalMinister, scheduleDate });
 
     // Atualiza também allMusicLinks com o mesmo ID
     const nameWords  = normalizeName(name.trim());
@@ -338,6 +344,8 @@ export const updateMusicLink = async (req: Request, res: Response): Promise<void
         nameSearch: normalizedName, 
         link: embedLink,
         letter,
+        lyricsChords: lyricsChords || null,
+        chordSourceKey: chordSourceKey || cifra || null,
         spotify,
         cifra,
         description,
