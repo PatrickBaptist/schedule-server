@@ -5,7 +5,7 @@ import usersRouter from './routes/usersRoutes';
 import cronsRoutes from './routes/cronsRoutes';
 import { auditMiddleware } from './middlewares/auditMiddleware';
 import { runDataRetentionCleanup } from './utils/dataRetentionCleanup';
-import organizationRoutes, { invitationRoutes } from './routes/organizationRoutes';
+import organizationRoutes, { invitationRoutes, ownershipTransferRoutes } from './routes/organizationRoutes';
 import organizationDataRoutes from './routes/organizationDataRoutes';
 
 import { config } from 'dotenv';
@@ -54,6 +54,7 @@ app.use("/auth", authUserRoutes);
 app.use("/organizations", organizationRoutes);
 app.use("/organizations/:organizationId", organizationDataRoutes);
 app.use("/invitations", invitationRoutes);
+app.use("/ownership-transfers", ownershipTransferRoutes);
 // Account profile is global; organization members are managed by scoped routes.
 app.use("/users", usersRouter);
 

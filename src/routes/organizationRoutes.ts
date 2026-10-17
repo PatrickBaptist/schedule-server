@@ -15,6 +15,25 @@ const handle = (action: (req: Request) => Promise<unknown>, status = 200) => asy
 router.use(authenticateToken);
 router.get("/", handle(async req => (await service.listUserOrganizations(userId(req))).map(item => ({ ...item.organization, membership: item.membership }))));
 router.post("/", handle(req => service.createOrganization(userId(req), req.body), 201));
+router.get("/:organizationId/ownership-transfers", handle(req => service.listOwnershipTransfers(
+  req.params.organizationId,
+  userId(req)
+)));
+router.post("/:organizationId/transfer-ownership", handle(req => service.requestOwnershipTransfer(
+  req.params.organizationId,
+  userId(req),
+  String(req.body?.newOwnerId || "")
+)));
+router.post("/:organizationId/ownership-transfers/:transferId/respond", handle(req => service.respondToOwnershipTransfer(
+  req.params.organizationId,
+  req.params.transferId,
+  userId(req),
+  String(req.body?.decision || "") as "accept" | "reject"
+)));
+router.delete("/:organizationId", handle(req => service.deleteOrganization(
+  req.params.organizationId,
+  userId(req)
+)));
 router.use("/:organizationId/invitations", requireOrganizationMembership, requireOrganizationManagementRole(Role.Owner, Role.OrganizationAdmin, Role.Leader));
 router.get("/:organizationId/invitations", handle(req => service.listInvitations(req.params.organizationId)));
 router.post("/:organizationId/invitations", handle(async req => {
@@ -37,4 +56,11 @@ router.delete("/:organizationId/invitations/:invitationId", handle(req => servic
 export const invitationRoutes = Router();
 invitationRoutes.get("/:slug/:token/preview", handle(req => service.previewInvitation(req.params.slug, req.params.token)));
 invitationRoutes.post("/:slug/:token/accept", authenticateToken, handle(req => service.acceptInvitation(req.params.slug, req.params.token, userId(req))));
+
+export const ownershipTransferRoutes = Router();
+ownershipTransferRoutes.get("/:token/preview", handle(req => service.previewOwnershipTransferByToken(req.params.token)));
+ownershipTransferRoutes.post("/:token/respond", handle(req => service.respondToOwnershipTransferByToken(
+  req.params.token,
+  String(req.body?.decision || "") as "accept" | "reject"
+)));
 export default router;

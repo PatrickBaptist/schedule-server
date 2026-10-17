@@ -21,4 +21,8 @@ export interface WorshipUser {
   firebaseUid?: string | null;
   provider?: string | null;
   createdAt?: string;
+  emailVerified?: boolean;
+  emailVerificationTokenHash?: string | null;
+  emailVerificationExpiresAt?: string | null;
+  emailVerificationLastSentAt?: string | null;
 }

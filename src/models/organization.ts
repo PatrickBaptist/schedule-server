@@ -7,6 +7,7 @@ export enum OrganizationManagementRole {
   Owner = "owner",
   OrganizationAdmin = "organization_admin",
   Leader = "leader",
+  Guest = "guest",
   Member = "member",
 }
 

@@ -12,6 +12,7 @@ import {
 } from "../models/organization";
 import { db } from "../repositories/firebaseService";
 import { ScheduleRoleService } from "./scheduleRoleService";
+import { EmailService } from "./emailService";
 
 const ORGANIZATIONS_COLLECTION = "organizations";
 const ORGANIZATION_SLUGS_COLLECTION = "organizationSlugs";
@@ -163,6 +164,235 @@ function organizationRef(organizationId: string) {
 }
 
 export class OrganizationService {
+  async requestOwnershipTransfer(organizationId: string, actorUserId: string, newOwnerId: string) {
+    if (!newOwnerId || newOwnerId === actorUserId) {
+      throw new OrganizationServiceError("Escolha outro membro para receber a propriedade");
+    }
+    const orgRef = organizationRef(organizationId);
+    const currentOwnerRef = orgRef.collection(MEMBERS_COLLECTION).doc(actorUserId);
+    const nextOwnerRef = orgRef.collection(MEMBERS_COLLECTION).doc(newOwnerId);
+    const nextOwnerUserRef = db.collection("users").doc(newOwnerId);
+    const transferRef = orgRef.collection("ownershipTransfers").doc();
+    const transferToken = randomBytes(32).toString("hex");
+    const now = new Date().toISOString();
+
+    await db.runTransaction(async transaction => {
+      const [orgSnapshot, currentOwner, nextOwner, nextOwnerUser] = await Promise.all([
+        transaction.get(orgRef),
+        transaction.get(currentOwnerRef),
+        transaction.get(nextOwnerRef),
+        transaction.get(nextOwnerUserRef),
+      ]);
+      if (!orgSnapshot.exists || orgSnapshot.data()?.status !== OrganizationStatus.Active) {
+        throw new OrganizationServiceError("Organização não encontrada ou desabilitada", 404);
+      }
+      if (!currentOwner.exists || currentOwner.data()?.managementRole !== OrganizationManagementRole.Owner || currentOwner.data()?.status !== MembershipStatus.Enabled) {
+        throw new OrganizationServiceError("Somente o proprietário pode transferir a propriedade", 403);
+      }
+      if (!nextOwner.exists || nextOwner.data()?.status !== MembershipStatus.Enabled || !nextOwnerUser.exists || nextOwnerUser.data()?.status !== UserStatus.Enabled) {
+        throw new OrganizationServiceError("O novo proprietário precisa ser um membro ativo", 400);
+      }
+      if (orgSnapshot.data()?.pendingOwnershipTransferId) {
+        throw new OrganizationServiceError("Já existe um pedido de troca de proprietário aguardando resposta", 409);
+      }
+      transaction.create(transferRef, {
+        organizationId,
+        organizationName: orgSnapshot.data()?.name || "Organização",
+        requesterId: actorUserId,
+        targetUserId: newOwnerId,
+        tokenHash: hashToken(transferToken),
+        status: "pending",
+        createdAt: now,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        updatedAt: now,
+      });
+      transaction.update(orgRef, { pendingOwnershipTransferId: transferRef.id, updatedAt: now });
+    });
+
+    const [organization, targetUser] = await Promise.all([orgRef.get(), nextOwnerUserRef.get()]);
+    const targetEmail = String(targetUser.data()?.email || "");
+    if (targetEmail) {
+      try {
+        await new EmailService().sendOwnershipTransferRequestEmail({
+          to: targetEmail,
+          nickname: targetUser.data()?.nickname,
+          organizationName: String(organization.data()?.name || "Organização"),
+          token: transferToken,
+        });
+      } catch (error) {
+        console.error("Pedido de troca criado, mas não foi possível avisar o novo proprietário:", error);
+      }
+    }
+    return { message: "Pedido enviado. A propriedade só será transferida quando a outra pessoa aceitar." };
+  }
+
+  async previewOwnershipTransferByToken(token: string) {
+    if (!token) throw new OrganizationServiceError("O link do pedido está incompleto", 400);
+    const matches = await db.collectionGroup("ownershipTransfers").where("tokenHash", "==", hashToken(token)).limit(1).get();
+    if (matches.empty) throw new OrganizationServiceError("Este link não é válido", 404);
+    const snapshot = matches.docs[0];
+    const request = snapshot.data();
+    if (request.status !== "pending" || Date.parse(request.expiresAt || "") <= Date.now()) {
+      throw new OrganizationServiceError("Este pedido já foi respondido ou venceu", 410);
+    }
+    return { organizationName: request.organizationName || "Organização", expiresAt: request.expiresAt };
+  }
+
+  async respondToOwnershipTransferByToken(token: string, decision: "accept" | "reject") {
+    if (!token) throw new OrganizationServiceError("O link do pedido está incompleto", 400);
+    const matches = await db.collectionGroup("ownershipTransfers").where("tokenHash", "==", hashToken(token)).limit(1).get();
+    if (matches.empty) throw new OrganizationServiceError("Este link não é válido", 404);
+    const snapshot = matches.docs[0];
+    const request = snapshot.data();
+    const organizationRef = snapshot.ref.parent.parent;
+    if (!organizationRef) throw new OrganizationServiceError("Organização não encontrada", 404);
+    if (Date.parse(request.expiresAt || "") <= Date.now()) throw new OrganizationServiceError("Este pedido venceu", 410);
+    return this.respondToOwnershipTransfer(organizationRef.id, snapshot.id, request.targetUserId, decision);
+  }
+
+  async listOwnershipTransfers(organizationId: string, actorUserId: string) {
+    const orgRef = organizationRef(organizationId);
+    const membership = await orgRef.collection(MEMBERS_COLLECTION).doc(actorUserId).get();
+    if (!membership.exists || membership.data()?.status !== MembershipStatus.Enabled) {
+      throw new OrganizationServiceError("Você não participa desta organização", 403);
+    }
+    const snapshot = await orgRef.collection("ownershipTransfers").get();
+    return snapshot.docs
+      .map(document => {
+        const { tokenHash: _tokenHash, ...request } = document.data();
+        return { id: document.id, ...request };
+      })
+      .filter((request: any) => request.requesterId === actorUserId || request.targetUserId === actorUserId)
+      .sort((a: any, b: any) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  }
+
+  async respondToOwnershipTransfer(organizationId: string, transferId: string, actorUserId: string, decision: "accept" | "reject") {
+    if (!["accept", "reject"].includes(decision)) throw new OrganizationServiceError("Resposta inválida");
+    const orgRef = organizationRef(organizationId);
+    const transferRef = orgRef.collection("ownershipTransfers").doc(transferId);
+    const now = new Date().toISOString();
+    let requesterId = "";
+    let organizationName = "Organização";
+
+    await db.runTransaction(async transaction => {
+      const transferSnapshot = await transaction.get(transferRef);
+      if (!transferSnapshot.exists) throw new OrganizationServiceError("Pedido não encontrado", 404);
+      const request = transferSnapshot.data()!;
+      if (request.targetUserId !== actorUserId) throw new OrganizationServiceError("Somente a pessoa convidada pode responder", 403);
+      if (request.status !== "pending") throw new OrganizationServiceError("Este pedido já foi respondido", 409);
+      if (Date.parse(request.expiresAt || "") <= Date.now()) throw new OrganizationServiceError("Este pedido venceu", 410);
+      const requesterRef = orgRef.collection(MEMBERS_COLLECTION).doc(request.requesterId);
+      const targetRef = orgRef.collection(MEMBERS_COLLECTION).doc(actorUserId);
+      const [orgSnapshot, requester, target, targetUser] = await Promise.all([
+        transaction.get(orgRef), transaction.get(requesterRef), transaction.get(targetRef),
+        transaction.get(db.collection("users").doc(actorUserId)),
+      ]);
+      if (!orgSnapshot.exists || orgSnapshot.data()?.status !== OrganizationStatus.Active) throw new OrganizationServiceError("Organização não encontrada ou desabilitada", 404);
+      if (orgSnapshot.data()?.pendingOwnershipTransferId !== transferId) throw new OrganizationServiceError("Este pedido não está mais ativo", 409);
+      if (!requester.exists || requester.data()?.status !== MembershipStatus.Enabled || requester.data()?.managementRole !== OrganizationManagementRole.Owner) {
+        throw new OrganizationServiceError("O proprietário atual não pode mais transferir esta organização", 409);
+      }
+      if (!target.exists || target.data()?.status !== MembershipStatus.Enabled || !targetUser.exists || targetUser.data()?.status !== UserStatus.Enabled) {
+        throw new OrganizationServiceError("Sua participação não está mais ativa", 403);
+      }
+      requesterId = request.requesterId;
+      organizationName = String(orgSnapshot.data()?.name || request.organizationName || "Organização");
+      transaction.update(transferRef, { status: decision === "accept" ? "accepted" : "rejected", respondedAt: now, updatedAt: now });
+      transaction.update(orgRef, { pendingOwnershipTransferId: null, updatedAt: now });
+      if (decision === "accept") {
+        transaction.update(targetRef, { managementRole: OrganizationManagementRole.Owner, updatedAt: now });
+        transaction.update(requesterRef, { managementRole: OrganizationManagementRole.Member, updatedAt: now });
+      }
+    });
+
+    const requesterUser = await db.collection("users").doc(requesterId).get();
+    const requesterEmail = String(requesterUser.data()?.email || "");
+    if (requesterEmail) {
+      try {
+        await new EmailService().sendOwnershipTransferResponseEmail({
+          to: requesterEmail,
+          nickname: requesterUser.data()?.nickname,
+          organizationName,
+          accepted: decision === "accept",
+        });
+      } catch (error) {
+        console.error("Resposta ao pedido salva, mas não foi possível avisar o proprietário anterior:", error);
+      }
+    }
+    return { message: decision === "accept" ? "Você aceitou a propriedade da organização." : "Você recusou o pedido de propriedade." };
+  }
+
+  async deleteOrganization(organizationId: string, actorUserId: string) {
+    const orgRef = organizationRef(organizationId);
+    const ownerRef = orgRef.collection(MEMBERS_COLLECTION).doc(actorUserId);
+    const now = new Date().toISOString();
+    const [organizationBeforeDeletion, ownerIdentity] = await Promise.all([
+      orgRef.get(),
+      db.collection("users").doc(actorUserId).get(),
+    ]);
+    const deletedOrganizationName = String(organizationBeforeDeletion.data()?.name || "Organização");
+    const ownerEmail = String(ownerIdentity.data()?.email || "");
+    const ownerNickname = ownerIdentity.data()?.nickname || null;
+
+    await db.runTransaction(async transaction => {
+      const [orgSnapshot, ownerSnapshot] = await Promise.all([
+        transaction.get(orgRef),
+        transaction.get(ownerRef),
+      ]);
+      if (!ownerSnapshot.exists || ownerSnapshot.data()?.managementRole !== OrganizationManagementRole.Owner) {
+        throw new OrganizationServiceError("Somente o proprietário pode excluir a organização", 403);
+      }
+      if (!orgSnapshot.exists) return;
+
+      const orgData = orgSnapshot.data()!;
+      if (orgData.status !== OrganizationStatus.Active && orgData.status !== OrganizationStatus.Disabled) {
+        throw new OrganizationServiceError("Organização não pode ser excluída neste estado", 409);
+      }
+      if (orgData.deletionRequestedBy && orgData.deletionRequestedBy !== actorUserId) {
+        throw new OrganizationServiceError("A exclusão desta organização já foi iniciada por outra conta", 409);
+      }
+      if (orgData.status === OrganizationStatus.Active || !orgData.deletionRequestedBy) {
+        transaction.update(orgRef, {
+          status: OrganizationStatus.Disabled,
+          deletionRequestedBy: actorUserId,
+          deletionRequestedAt: now,
+          updatedAt: now,
+        });
+        return;
+      }
+      if (orgData.status !== OrganizationStatus.Disabled || orgData.deletionRequestedBy !== actorUserId) {
+        throw new OrganizationServiceError("Organização desabilitada não pode ser excluída por esta conta", 409);
+      }
+    });
+
+    const slug = String((await orgRef.get()).data()?.slug || "");
+    await db.recursiveDelete(orgRef);
+    if (slug) {
+      await db.collection(ORGANIZATION_SLUGS_COLLECTION).doc(slug).delete().catch(() => undefined);
+    } else {
+      const staleSlugs = await db.collection(ORGANIZATION_SLUGS_COLLECTION)
+        .where("organizationId", "==", organizationId)
+        .get();
+      if (!staleSlugs.empty) {
+        const batch = db.batch();
+        staleSlugs.docs.forEach(document => batch.delete(document.ref));
+        await batch.commit();
+      }
+    }
+    if (ownerEmail) {
+      try {
+        await new EmailService().sendOrganizationDeletedEmail({
+          to: ownerEmail,
+          nickname: ownerNickname,
+          organizationName: deletedOrganizationName,
+        });
+      } catch (error) {
+        console.error("Organização excluída, mas não foi possível enviar o e-mail de aviso:", error);
+      }
+    }
+    return { message: "Organização e seus dados foram excluídos" };
+  }
+
   async createOrganization(userId: string, dto: CreateOrganizationDto) {
     const name = requireText(dto.name, "Nome", 120);
     const slug = normalizeSlug(dto.slug || name);

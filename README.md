@@ -325,6 +325,8 @@ O sistema envia e-mails usando `"Resend"` para:
 - mandar versículo da semana
 - mandar músicas da semana
 
+Para confirmar o cadastro e enviar o e-mail de boas-vindas, configure `APP_URL` com a URL pública do frontend. O link de confirmação expira em 24 horas; o usuário pode solicitar outro pela tela de login.
+
 ## Auditoria
 
 O `"auditMiddleware"` registra automaticamente ações de:

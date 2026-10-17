@@ -16,7 +16,7 @@ type MembershipData = {
   joinedAt?: unknown;
 };
 
-const MANAGEMENT_ROLES = new Set(["owner", "organization_admin", "leader", "member"]);
+const MANAGEMENT_ROLES = new Set(["owner", "organization_admin", "leader", "guest", "member"]);
 const MEMBER_STATUSES = new Set(["enabled", "pending", "disabled"]);
 
 function getContext(req: Request) {
@@ -146,6 +146,10 @@ export class OrganizationUsersController {
         }
         if (requestedManagementRole === "owner" && actorRole !== "owner") {
           res.status(403).json({ message: "Somente o proprietário pode transferir propriedade" });
+          return;
+        }
+        if (requestedManagementRole === "owner" && targetRole !== "owner") {
+          res.status(409).json({ message: "Use a opção de transferência de propriedade para trocar o proprietário" });
           return;
         }
         if (actorRole === "leader" && requestedManagementRole !== "member") {

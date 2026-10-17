@@ -19,6 +19,7 @@ export async function requireOrganizationMembership(req: Request, res: Response,
     const roles = [...(req.membership.musicalRoles || [])];
     if (["owner", "organization_admin"].includes(managementRole)) roles.push("admin");
     if (managementRole === "leader") roles.push("leader");
+    if (managementRole === "guest") roles.push("guest");
     req.user = { ...req.user!, role: roles as any, roles: roles as any };
     next();
   } catch { res.status(503).json({ message: "Não foi possível validar sua participação" }); }

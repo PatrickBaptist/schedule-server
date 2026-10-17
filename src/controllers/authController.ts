@@ -2,8 +2,10 @@ import { Request, Response } from "express";
 import { AuthService } from "../services/authService";
 import { GoogleAuthDto, LoginUserDto, RegisterUserDto } from "../dtos/auth.dto";
 import { UserRole } from "../enums/UserRoles";
+import { AccountService } from "../services/accountService";
 
 const authService = new AuthService();
+const accountService = new AccountService();
 
 export class AuthController {
   static async login(req: Request, res: Response): Promise<void> {
@@ -27,6 +29,47 @@ export class AuthController {
       console.log("Usuário cadastrado")
     } catch (error: any) {
       res.status(401).json({ message: error.message });
+    }
+  }
+
+  static async verifyEmail(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await authService.verifyEmail(String(req.body?.token || ""));
+      res.status(200).json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  }
+
+  static async resendEmailVerification(req: Request, res: Response): Promise<void> {
+    try {
+      const result = await authService.resendEmailVerification(String(req.body?.email || ""));
+      res.status(200).json(result);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  }
+
+  static async getAccountDeletionOptions(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId || req.user?.id;
+      if (!userId) { res.status(401).json({ message: "Usuário não identificado" }); return; }
+      res.status(200).json(await accountService.getDeletionOptions(userId));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  }
+
+  static async deleteAccount(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.userId || req.user?.id;
+      if (!userId) { res.status(401).json({ message: "Usuário não identificado" }); return; }
+      const actions = req.body?.organizations && typeof req.body.organizations === "object"
+        ? req.body.organizations
+        : {};
+      res.status(200).json(await accountService.deleteAccount(userId, req.body?.confirmationEmail, actions));
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
     }
   }
 
